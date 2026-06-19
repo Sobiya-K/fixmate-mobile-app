@@ -1,4 +1,3 @@
-```tsx
 import { router, useFocusEffect } from "expo-router";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useCallback, useMemo, useState } from "react";
@@ -15,6 +14,7 @@ import {
   View,
 } from "react-native";
 
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase";
 
 type BookingStatus =
@@ -57,72 +57,6 @@ type StatusAction = {
   label: string;
   nextStatus: BookingStatus;
   type: "primary" | "danger" | "success";
-};
-
-const getStatusLabel = (status: BookingStatus) => {
-  switch (status) {
-    case "pending":
-      return "Pending";
-
-    case "accepted":
-      return "Accepted";
-
-    case "rejected":
-      return "Rejected";
-
-    case "in_progress":
-      return "In Progress";
-
-    case "completed":
-      return "Completed";
-
-    case "cancelled":
-      return "Cancelled";
-
-    default:
-      return status;
-  }
-};
-
-const getStatusActions = (
-  status: BookingStatus
-): StatusAction[] => {
-  switch (status) {
-    case "pending":
-      return [
-        {
-          label: "Accept Request",
-          nextStatus: "accepted",
-          type: "primary",
-        },
-        {
-          label: "Reject",
-          nextStatus: "rejected",
-          type: "danger",
-        },
-      ];
-
-    case "accepted":
-      return [
-        {
-          label: "Start Job",
-          nextStatus: "in_progress",
-          type: "primary",
-        },
-      ];
-
-    case "in_progress":
-      return [
-        {
-          label: "Mark Completed",
-          nextStatus: "completed",
-          type: "success",
-        },
-      ];
-
-    default:
-      return [];
-  }
 };
 
 const getStatusTheme = (status: BookingStatus) => {
@@ -171,14 +105,27 @@ const getStatusTheme = (status: BookingStatus) => {
   }
 };
 
-const formatBookingDate = (dateValue: string) => {
+const formatBookingDate = (
+  dateValue: string,
+  language: "en" | "ta" | "si"
+): string => {
   const date = new Date(dateValue);
 
   if (Number.isNaN(date.getTime())) {
-    return "Invalid date";
+    return dateValue;
   }
 
-  return date.toLocaleString("en-GB", {
+  let locale = "en-LK";
+
+  if (language === "ta") {
+    locale = "ta-LK";
+  }
+
+  if (language === "si") {
+    locale = "si-LK";
+  }
+
+  return date.toLocaleString(locale, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -188,15 +135,141 @@ const formatBookingDate = (dateValue: string) => {
 };
 
 export default function WorkerDashboard() {
-  const [fullName, setFullName] = useState("Worker");
+  const {
+    language,
+    languageName,
+    t,
+  } = useLanguage();
 
-  const [category, setCategory] =
-    useState("Service Provider");
+  const translate = useCallback(
+    (
+      key: string,
+      fallback: string
+    ): string => {
+      const translatedValue = t(key);
 
-  const [bookings, setBookings] =
-    useState<WorkerBooking[]>([]);
+      return translatedValue === key
+        ? fallback
+        : translatedValue;
+    },
+    [t]
+  );
 
-  const [isLoading, setIsLoading] = useState(true);
+  const getStatusLabel = useCallback(
+    (status: BookingStatus): string => {
+      switch (status) {
+        case "pending":
+          return translate(
+            "bookings.pending",
+            "Pending"
+          );
+
+        case "accepted":
+          return translate(
+            "bookings.accepted",
+            "Accepted"
+          );
+
+        case "rejected":
+          return translate(
+            "bookings.rejected",
+            "Rejected"
+          );
+
+        case "in_progress":
+          return translate(
+            "bookings.inProgress",
+            "In Progress"
+          );
+
+        case "completed":
+          return translate(
+            "bookings.completed",
+            "Completed"
+          );
+
+        case "cancelled":
+          return translate(
+            "bookings.cancelled",
+            "Cancelled"
+          );
+
+        default:
+          return status;
+      }
+    },
+    [translate]
+  );
+
+  const getStatusActions = useCallback(
+    (
+      status: BookingStatus
+    ): StatusAction[] => {
+      switch (status) {
+        case "pending":
+          return [
+            {
+              label: translate(
+                "worker.acceptRequest",
+                "Accept Request"
+              ),
+              nextStatus: "accepted",
+              type: "primary",
+            },
+            {
+              label: translate(
+                "worker.reject",
+                "Reject"
+              ),
+              nextStatus: "rejected",
+              type: "danger",
+            },
+          ];
+
+        case "accepted":
+          return [
+            {
+              label: translate(
+                "worker.startJob",
+                "Start Job"
+              ),
+              nextStatus: "in_progress",
+              type: "primary",
+            },
+          ];
+
+        case "in_progress":
+          return [
+            {
+              label: translate(
+                "worker.markCompleted",
+                "Mark Completed"
+              ),
+              nextStatus: "completed",
+              type: "success",
+            },
+          ];
+
+        default:
+          return [];
+      }
+    },
+    [translate]
+  );
+
+  const [fullName, setFullName] =
+    useState("Worker");
+
+  const [category, setCategory] = useState(
+    "Service Provider"
+  );
+
+  const [bookings, setBookings] = useState<
+    WorkerBooking[]
+  >([]);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
 
   const [isRefreshing, setIsRefreshing] =
     useState(false);
@@ -209,6 +282,11 @@ export default function WorkerDashboard() {
 
   const [errorMessage, setErrorMessage] =
     useState("");
+
+  const [
+    unreadNotificationCount,
+    setUnreadNotificationCount,
+  ] = useState(0);
 
   const loadDashboard = useCallback(
     async (
@@ -251,7 +329,10 @@ export default function WorkerDashboard() {
           );
 
           setErrorMessage(
-            "Your worker account could not be loaded."
+            translate(
+              "worker.accountLoadError",
+              "Your worker account could not be loaded."
+            )
           );
 
           return null;
@@ -259,9 +340,15 @@ export default function WorkerDashboard() {
 
         if (profileData.role !== "worker") {
           if (profileData.role === "customer") {
-            router.replace("/customer-dashboard");
-          } else if (profileData.role === "admin") {
-            router.replace("/admin-dashboard");
+            router.replace(
+              "/customer-dashboard"
+            );
+          } else if (
+            profileData.role === "admin"
+          ) {
+            router.replace(
+              "/admin-dashboard"
+            );
           }
 
           return null;
@@ -290,7 +377,10 @@ export default function WorkerDashboard() {
           );
 
           setErrorMessage(
-            "Your worker service profile could not be loaded."
+            translate(
+              "worker.profileLoadError",
+              "Your worker service profile could not be loaded."
+            )
           );
 
           return null;
@@ -307,18 +397,7 @@ export default function WorkerDashboard() {
         } = await supabase
           .from("bookings")
           .select(
-            `
-              id,
-              customer_id,
-              worker_id,
-              service_category,
-              service_description,
-              service_address,
-              preferred_date,
-              estimated_price,
-              status,
-              created_at
-            `
+            "id, customer_id, worker_id, service_category, service_description, service_address, preferred_date, estimated_price, status, created_at"
           )
           .eq("worker_id", user.id)
           .order("created_at", {
@@ -332,7 +411,10 @@ export default function WorkerDashboard() {
           );
 
           setErrorMessage(
-            "Customer booking requests could not be loaded."
+            translate(
+              "worker.bookingsLoadError",
+              "Customer booking requests could not be loaded."
+            )
           );
 
           return null;
@@ -345,13 +427,18 @@ export default function WorkerDashboard() {
 
           status: String(booking.status)
             .trim()
-            .toLowerCase() as BookingStatus,
+            .toLowerCase()
+            .replace(
+              " ",
+              "_"
+            ) as BookingStatus,
         })) as RawBooking[];
 
         const customerIds = [
           ...new Set(
             rawBookings.map(
-              (booking) => booking.customer_id
+              (booking) =>
+                booking.customer_id
             )
           ),
         ];
@@ -379,7 +466,8 @@ export default function WorkerDashboard() {
             );
           } else {
             (
-              (customerData ?? []) as CustomerProfile[]
+              (customerData ??
+                []) as CustomerProfile[]
             ).forEach((customer) => {
               customerMap.set(
                 customer.id,
@@ -389,26 +477,37 @@ export default function WorkerDashboard() {
           }
         }
 
-        const preparedBookings: WorkerBooking[] =
+        const preparedBookings:
+          WorkerBooking[] =
           rawBookings.map((booking) => {
-            const customer = customerMap.get(
-              booking.customer_id
-            );
+            const customer =
+              customerMap.get(
+                booking.customer_id
+              );
 
             return {
               ...booking,
 
               customer_name:
                 customer?.full_name ||
-                "FixMate Customer",
+                translate(
+                  "worker.fixmateCustomer",
+                  "FixMate Customer"
+                ),
 
               customer_phone:
                 customer?.phone ||
-                "Not provided",
+                translate(
+                  "common.notProvided",
+                  "Not provided"
+                ),
 
               customer_town:
                 customer?.town ||
-                "Not provided",
+                translate(
+                  "common.notProvided",
+                  "Not provided"
+                ),
             };
           });
 
@@ -422,7 +521,10 @@ export default function WorkerDashboard() {
         );
 
         setErrorMessage(
-          "Something went wrong while loading the worker dashboard."
+          translate(
+            "worker.unexpectedLoadError",
+            "Something went wrong while loading the worker dashboard."
+          )
         );
 
         return null;
@@ -431,82 +533,219 @@ export default function WorkerDashboard() {
         setIsRefreshing(false);
       }
     },
-    []
+    [translate]
   );
+
+  const loadUnreadNotificationCount =
+    useCallback(
+      async (
+        currentUserId?: string
+      ): Promise<void> => {
+        try {
+          let resolvedUserId =
+            currentUserId;
+
+          if (!resolvedUserId) {
+            const {
+              data: { user },
+              error: userError,
+            } =
+              await supabase.auth.getUser();
+
+            if (userError || !user) {
+              setUnreadNotificationCount(0);
+              return;
+            }
+
+            resolvedUserId = user.id;
+          }
+
+          const {
+            count,
+            error: notificationError,
+          } = await supabase
+            .from("notifications")
+            .select("id", {
+              count: "exact",
+              head: true,
+            })
+            .eq("user_id", resolvedUserId)
+            .eq("is_read", false);
+
+          if (notificationError) {
+            console.error(
+              "Worker unread notification error:",
+              notificationError
+            );
+
+            return;
+          }
+
+          setUnreadNotificationCount(
+            count ?? 0
+          );
+        } catch (error) {
+          console.error(
+            "Unexpected notification count error:",
+            error
+          );
+        }
+      },
+      []
+    );
 
   useFocusEffect(
     useCallback(() => {
       let isScreenActive = true;
 
-      let realtimeChannel: RealtimeChannel | null =
-        null;
+      let bookingChannel:
+        RealtimeChannel | null = null;
 
-      const startScreen = async () => {
-        const workerId = await loadDashboard(
-          "initial"
-        );
+      const startBookingUpdates =
+        async () => {
+          const workerId =
+            await loadDashboard("initial");
 
-        if (!workerId || !isScreenActive) {
-          return;
-        }
+          if (
+            !workerId ||
+            !isScreenActive
+          ) {
+            return;
+          }
 
-        realtimeChannel = supabase
-          .channel(
-            `worker-bookings-${workerId}`
-          )
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: "bookings",
-              filter: `worker_id=eq.${workerId}`,
-            },
-            async (payload) => {
+          bookingChannel = supabase
+            .channel(
+              "worker-bookings-" +
+                workerId
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "bookings",
+                filter:
+                  "worker_id=eq." +
+                  workerId,
+              },
+              async (payload) => {
+                console.log(
+                  "Worker booking realtime event:",
+                  payload
+                );
+
+                if (isScreenActive) {
+                  await loadDashboard(
+                    "silent"
+                  );
+                }
+              }
+            )
+            .subscribe((status) => {
+              if (!isScreenActive) {
+                return;
+              }
+
               console.log(
-                "Worker booking realtime event:",
-                payload
+                "Worker booking realtime connection:",
+                status
               );
 
-              if (isScreenActive) {
-                await loadDashboard("silent");
-              }
-            }
-          )
-          .subscribe((status) => {
-            if (!isScreenActive) {
-              return;
-            }
+              setIsLiveConnected(
+                status === "SUBSCRIBED"
+              );
+            });
+        };
 
-            console.log(
-              "Worker realtime connection:",
-              status
-            );
-
-            setIsLiveConnected(
-              status === "SUBSCRIBED"
-            );
-          });
-      };
-
-      void startScreen();
+      void startBookingUpdates();
 
       return () => {
         isScreenActive = false;
+
         setIsLiveConnected(false);
 
-        if (realtimeChannel) {
+        if (bookingChannel) {
           void supabase.removeChannel(
-            realtimeChannel
+            bookingChannel
           );
         }
       };
     }, [loadDashboard])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      let isScreenActive = true;
+
+      let notificationChannel:
+        RealtimeChannel | null = null;
+
+      const startNotificationUpdates =
+        async () => {
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+
+          if (
+            userError ||
+            !user ||
+            !isScreenActive
+          ) {
+            return;
+          }
+
+          await loadUnreadNotificationCount(
+            user.id
+          );
+
+          if (!isScreenActive) {
+            return;
+          }
+
+          notificationChannel = supabase
+            .channel(
+              "worker-notification-count-" +
+                user.id
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "notifications",
+                filter:
+                  "user_id=eq." + user.id,
+              },
+              async () => {
+                if (isScreenActive) {
+                  await loadUnreadNotificationCount(
+                    user.id
+                  );
+                }
+              }
+            )
+            .subscribe();
+        };
+
+      void startNotificationUpdates();
+
+      return () => {
+        isScreenActive = false;
+
+        if (notificationChannel) {
+          void supabase.removeChannel(
+            notificationChannel
+          );
+        }
+      };
+    }, [loadUnreadNotificationCount])
+  );
+
   const summary = useMemo(() => {
     const pending = bookings.filter(
-      (booking) => booking.status === "pending"
+      (booking) =>
+        booking.status === "pending"
     ).length;
 
     const active = bookings.filter(
@@ -544,7 +783,10 @@ export default function WorkerDashboard() {
 
       if (error) {
         Alert.alert(
-          "Status update failed",
+          translate(
+            "worker.statusUpdateFailed",
+            "Status update failed"
+          ),
           error.message
         );
 
@@ -552,21 +794,29 @@ export default function WorkerDashboard() {
       }
 
       setBookings((currentBookings) =>
-        currentBookings.map((currentBooking) =>
-          currentBooking.id === booking.id
-            ? {
-                ...currentBooking,
-                status: newStatus,
-              }
-            : currentBooking
+        currentBookings.map(
+          (currentBooking) =>
+            currentBooking.id === booking.id
+              ? {
+                  ...currentBooking,
+                  status: newStatus,
+                }
+              : currentBooking
         )
       );
 
       Alert.alert(
-        "Booking updated",
-        `The booking is now ${getStatusLabel(
-          newStatus
-        ).toLowerCase()}.`
+        translate(
+          "worker.bookingUpdated",
+          "Booking updated"
+        ),
+        translate(
+          "worker.bookingNow",
+          "The booking is now"
+        ) +
+          " " +
+          getStatusLabel(newStatus) +
+          "."
       );
     } catch (error) {
       console.error(
@@ -575,8 +825,14 @@ export default function WorkerDashboard() {
       );
 
       Alert.alert(
-        "Unexpected error",
-        "Something went wrong while updating the booking."
+        translate(
+          "common.error",
+          "Unexpected error"
+        ),
+        translate(
+          "worker.statusUnexpectedError",
+          "Something went wrong while updating the booking."
+        )
       );
     } finally {
       setUpdatingBookingId(null);
@@ -587,34 +843,44 @@ export default function WorkerDashboard() {
     booking: WorkerBooking,
     action: StatusAction
   ) => {
-    Alert.alert(
-      action.label,
-      `Change this booking from ${getStatusLabel(
-        booking.status
-      )} to ${getStatusLabel(
-        action.nextStatus
-      )}?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Confirm",
+    const message =
+      translate(
+        "worker.changeBookingFrom",
+        "Change this booking from"
+      ) +
+      " " +
+      getStatusLabel(booking.status) +
+      " " +
+      translate("worker.to", "to") +
+      " " +
+      getStatusLabel(action.nextStatus) +
+      "?";
 
-          style:
-            action.type === "danger"
-              ? "destructive"
-              : "default",
+    Alert.alert(action.label, message, [
+      {
+        text: translate(
+          "common.cancel",
+          "Cancel"
+        ),
+        style: "cancel",
+      },
+      {
+        text: translate(
+          "common.confirm",
+          "Confirm"
+        ),
+        style:
+          action.type === "danger"
+            ? "destructive"
+            : "default",
 
-          onPress: () =>
-            updateBookingStatus(
-              booking,
-              action.nextStatus
-            ),
-        },
-      ]
-    );
+        onPress: () =>
+          updateBookingStatus(
+            booking,
+            action.nextStatus
+          ),
+      },
+    ]);
   };
 
   const handleLogout = async () => {
@@ -623,15 +889,25 @@ export default function WorkerDashboard() {
 
     if (error) {
       Alert.alert(
-        "Logout failed",
+        translate(
+          "common.logoutFailed",
+          "Logout failed"
+        ),
         error.message
       );
 
       return;
     }
 
+    setUnreadNotificationCount(0);
+
     router.replace("/login");
   };
+
+  const displayNotificationCount =
+    unreadNotificationCount > 99
+      ? "99+"
+      : String(unreadNotificationCount);
 
   if (isLoading) {
     return (
@@ -643,7 +919,10 @@ export default function WorkerDashboard() {
           />
 
           <Text style={styles.loadingText}>
-            Loading worker dashboard...
+            {translate(
+              "worker.loading",
+              "Loading worker dashboard..."
+            )}
           </Text>
         </View>
       </SafeAreaView>
@@ -658,9 +937,12 @@ export default function WorkerDashboard() {
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={() =>
-              loadDashboard("refresh")
-            }
+            onRefresh={async () => {
+              await Promise.all([
+                loadDashboard("refresh"),
+                loadUnreadNotificationCount(),
+              ]);
+            }}
             colors={["#6D28D9"]}
           />
         }
@@ -668,7 +950,10 @@ export default function WorkerDashboard() {
         <View style={styles.header}>
           <View style={styles.headerInformation}>
             <Text style={styles.greeting}>
-              Welcome,
+              {translate(
+                "worker.welcome",
+                "Welcome,"
+              )}
             </Text>
 
             <Text style={styles.workerName}>
@@ -680,29 +965,106 @@ export default function WorkerDashboard() {
             </Text>
           </View>
 
-          <View style={styles.headerActions}>
-            <Pressable
-              style={styles.profileButton}
-              onPress={() =>
-                router.push("/profile")
+          <Pressable
+            style={styles.notificationIconButton}
+            onPress={() =>
+              router.push("/notifications")
+            }
+          >
+            <Text style={styles.notificationIcon}>
+              🔔
+            </Text>
+
+            {unreadNotificationCount > 0 && (
+              <View
+                style={
+                  styles.notificationCountBadge
+                }
+              >
+                <Text
+                  style={
+                    styles.notificationCountText
+                  }
+                >
+                  {displayNotificationCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.headerActions}>
+          <Pressable
+            style={styles.notificationButton}
+            onPress={() =>
+              router.push("/notifications")
+            }
+          >
+            <Text
+              style={
+                styles.notificationButtonText
               }
             >
-              <Text
-                style={styles.profileButtonText}
-              >
-                Profile
-              </Text>
-            </Pressable>
+              🔔{" "}
+              {translate(
+                "notifications.title",
+                "Notifications"
+              )}
+            </Text>
 
-            <Pressable
-              style={styles.logoutButton}
-              onPress={handleLogout}
-            >
-              <Text style={styles.logoutText}>
-                Logout
-              </Text>
-            </Pressable>
-          </View>
+            {unreadNotificationCount > 0 && (
+              <View
+                style={
+                  styles.inlineCountBadge
+                }
+              >
+                <Text
+                  style={
+                    styles.inlineCountText
+                  }
+                >
+                  {displayNotificationCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+
+          <Pressable
+            style={styles.languageButton}
+            onPress={() =>
+              router.push("/language")
+            }
+          >
+            <Text style={styles.languageButtonText}>
+              🌐 {languageName}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.profileButton}
+            onPress={() =>
+              router.push("/profile")
+            }
+          >
+            <Text style={styles.profileButtonText}>
+              {translate(
+                "common.profile",
+                "Profile"
+              )}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.logoutButton}
+            onPress={handleLogout}
+          >
+            <Text style={styles.logoutText}>
+              {translate(
+                "common.logout",
+                "Logout"
+              )}
+            </Text>
+          </Pressable>
         </View>
 
         <View style={styles.heroCard}>
@@ -712,12 +1074,17 @@ export default function WorkerDashboard() {
 
           <View style={styles.heroInformation}>
             <Text style={styles.heroTitle}>
-              Manage Your Jobs
+              {translate(
+                "worker.heroTitle",
+                "Manage Your Jobs"
+              )}
             </Text>
 
             <Text style={styles.heroText}>
-              New bookings and status changes appear
-              automatically.
+              {translate(
+                "worker.heroText",
+                "New bookings and status changes appear automatically."
+              )}
             </Text>
           </View>
 
@@ -740,8 +1107,16 @@ export default function WorkerDashboard() {
               ]}
             >
               {isLiveConnected
-                ? "● Live"
-                : "○ Connecting"}
+                ? "● " +
+                  translate(
+                    "worker.live",
+                    "Live"
+                  )
+                : "○ " +
+                  translate(
+                    "worker.connecting",
+                    "Connecting"
+                  )}
             </Text>
           </View>
         </View>
@@ -753,7 +1128,7 @@ export default function WorkerDashboard() {
             </Text>
 
             <Text style={styles.summaryLabel}>
-              Pending
+              {getStatusLabel("pending")}
             </Text>
           </View>
 
@@ -763,7 +1138,10 @@ export default function WorkerDashboard() {
             </Text>
 
             <Text style={styles.summaryLabel}>
-              Active
+              {translate(
+                "worker.active",
+                "Active"
+              )}
             </Text>
           </View>
 
@@ -773,18 +1151,25 @@ export default function WorkerDashboard() {
             </Text>
 
             <Text style={styles.summaryLabel}>
-              Completed
+              {getStatusLabel("completed")}
             </Text>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
-            Customer Requests
+            {translate(
+              "worker.customerRequests",
+              "Customer Requests"
+            )}
           </Text>
 
           <Text style={styles.bookingCount}>
-            {bookings.length} total
+            {bookings.length}{" "}
+            {translate(
+              "worker.total",
+              "total"
+            )}
           </Text>
         </View>
 
@@ -800,7 +1185,10 @@ export default function WorkerDashboard() {
               }
             >
               <Text style={styles.retryText}>
-                Try again
+                {translate(
+                  "common.retry",
+                  "Try again"
+                )}
               </Text>
             </Pressable>
           </View>
@@ -814,23 +1202,26 @@ export default function WorkerDashboard() {
             </Text>
 
             <Text style={styles.emptyTitle}>
-              No booking requests yet
+              {translate(
+                "worker.noBookings",
+                "No booking requests yet"
+              )}
             </Text>
 
             <Text style={styles.emptyText}>
-              New customer bookings will appear here
-              automatically.
+              {translate(
+                "worker.noBookingsText",
+                "New customer bookings will appear here automatically."
+              )}
             </Text>
           </View>
         ) : (
           bookings.map((booking) => {
-            const actions = getStatusActions(
-              booking.status
-            );
+            const actions =
+              getStatusActions(booking.status);
 
-            const statusTheme = getStatusTheme(
-              booking.status
-            );
+            const statusTheme =
+              getStatusTheme(booking.status);
 
             const isUpdating =
               updatingBookingId === booking.id;
@@ -842,16 +1233,18 @@ export default function WorkerDashboard() {
               >
                 <View style={styles.bookingTopRow}>
                   <View
-                    style={styles.customerInformation}
+                    style={
+                      styles.customerInformation
+                    }
                   >
-                    <Text
-                      style={styles.customerName}
-                    >
+                    <Text style={styles.customerName}>
                       {booking.customer_name}
                     </Text>
 
                     <Text
-                      style={styles.customerLocation}
+                      style={
+                        styles.customerLocation
+                      }
                     >
                       📍 {booking.customer_town}
                     </Text>
@@ -885,7 +1278,10 @@ export default function WorkerDashboard() {
                 <View style={styles.divider} />
 
                 <Text style={styles.detailLabel}>
-                  Service
+                  {translate(
+                    "worker.service",
+                    "Service"
+                  )}
                 </Text>
 
                 <Text style={styles.detailValue}>
@@ -893,7 +1289,10 @@ export default function WorkerDashboard() {
                 </Text>
 
                 <Text style={styles.detailLabel}>
-                  Customer request
+                  {translate(
+                    "worker.customerRequest",
+                    "Customer request"
+                  )}
                 </Text>
 
                 <Text style={styles.description}>
@@ -901,7 +1300,10 @@ export default function WorkerDashboard() {
                 </Text>
 
                 <Text style={styles.detailLabel}>
-                  Service address
+                  {translate(
+                    "worker.serviceAddress",
+                    "Service address"
+                  )}
                 </Text>
 
                 <Text style={styles.detailValue}>
@@ -909,12 +1311,16 @@ export default function WorkerDashboard() {
                 </Text>
 
                 <Text style={styles.detailLabel}>
-                  Preferred date and time
+                  {translate(
+                    "worker.preferredDate",
+                    "Preferred date and time"
+                  )}
                 </Text>
 
                 <Text style={styles.detailValue}>
                   {formatBookingDate(
-                    booking.preferred_date
+                    booking.preferred_date,
+                    language
                   )}
                 </Text>
 
@@ -926,7 +1332,10 @@ export default function WorkerDashboard() {
 
                 <View style={styles.priceRow}>
                   <Text style={styles.priceLabel}>
-                    Estimated starting price
+                    {translate(
+                      "worker.estimatedPrice",
+                      "Estimated starting price"
+                    )}
                   </Text>
 
                   <Text style={styles.priceValue}>
@@ -989,8 +1398,10 @@ export default function WorkerDashboard() {
 
                 {actions.length === 0 && (
                   <Text style={styles.finalStatusText}>
-                    No further action is required for this
-                    booking.
+                    {translate(
+                      "worker.noFurtherAction",
+                      "No further action is required for this booking."
+                    )}
                   </Text>
                 )}
               </View>
@@ -1052,14 +1463,105 @@ const styles = StyleSheet.create({
     color: "#6D28D9",
   },
 
+  notificationIconButton: {
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 23,
+    backgroundColor: "#FFFFFF",
+  },
+
+  notificationIcon: {
+    fontSize: 21,
+  },
+
+  notificationCountBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: "#F7F4FF",
+    borderRadius: 10,
+    backgroundColor: "#DC2626",
+  },
+
+  notificationCountText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+
   headerActions: {
     flexDirection: "row",
-    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 15,
+    marginHorizontal: -4,
+  },
+
+  notificationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderRadius: 9,
+    backgroundColor: "#6D28D9",
+  },
+
+  notificationButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  inlineCountBadge: {
+    minWidth: 19,
+    height: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    marginLeft: 7,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+  },
+
+  inlineCountText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  languageButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    borderRadius: 9,
+    backgroundColor: "#FFFFFF",
+  },
+
+  languageButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6D28D9",
   },
 
   profileButton: {
     paddingHorizontal: 12,
     paddingVertical: 9,
+    marginHorizontal: 4,
+    marginBottom: 8,
     borderRadius: 9,
     backgroundColor: "#EDE9FE",
   },
@@ -1073,6 +1575,8 @@ const styles = StyleSheet.create({
   logoutButton: {
     paddingHorizontal: 12,
     paddingVertical: 9,
+    marginHorizontal: 4,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: "#6D28D9",
     borderRadius: 9,
@@ -1088,7 +1592,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 18,
-    marginTop: 23,
+    marginTop: 15,
     borderRadius: 17,
     backgroundColor: "#6D28D9",
   },
@@ -1178,12 +1682,14 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
+    flex: 1,
     fontSize: 19,
     fontWeight: "800",
     color: "#1F2937",
   },
 
   bookingCount: {
+    marginLeft: 10,
     color: "#6B7280",
   },
 
@@ -1377,4 +1883,3 @@ const styles = StyleSheet.create({
     color: "#6D28D9",
   },
 });
-```

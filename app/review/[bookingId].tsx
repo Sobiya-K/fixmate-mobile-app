@@ -1,22 +1,28 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
+
+import {
+  LanguageCode,
+  useLanguage,
+} from "@/contexts/LanguageContext";
 
 import { supabase } from "@/lib/supabase";
 
-type BookingSummary = {
+type BookingDetails = {
   id: string;
   customer_id: string;
   worker_id: string;
@@ -24,62 +30,318 @@ type BookingSummary = {
   status: string;
 };
 
-type WorkerSummary = {
+type WorkerDetails = {
   id: string;
-  full_name: string;
-  category: string;
-  town: string;
+  full_name: string | null;
+  category: string | null;
+  town: string | null;
+};
+
+type ScreenText = {
+  back: string;
+  title: string;
+  subtitle: string;
+  loading: string;
+  loadFailed: string;
+  tryAgain: string;
+  worker: string;
+  service: string;
+  location: string;
+  ratingTitle: string;
+  ratingHelp: string;
+  commentTitle: string;
+  optional: string;
+  commentPlaceholder: string;
+  submit: string;
+  submitting: string;
+  ratingRequiredTitle: string;
+  ratingRequiredMessage: string;
+  completedOnlyTitle: string;
+  completedOnlyMessage: string;
+  alreadyReviewedTitle: string;
+  alreadyReviewedMessage: string;
+  loginRequired: string;
+  customerOnly: string;
+  reviewFailed: string;
+  unexpectedError: string;
+  successTitle: string;
+  successMessage: string;
+  backToBookings: string;
+  poor: string;
+  fair: string;
+  good: string;
+  veryGood: string;
+  excellent: string;
+};
+
+const screenTranslations: Record<
+  LanguageCode,
+  ScreenText
+> = {
+  en: {
+    back: "Back",
+    title: "Rate Your Experience",
+    subtitle:
+      "Your review helps other customers choose reliable skilled workers.",
+    loading: "Loading review information...",
+    loadFailed:
+      "The booking information could not be loaded.",
+    tryAgain: "Try Again",
+    worker: "Worker",
+    service: "Service",
+    location: "Location",
+    ratingTitle: "Your rating",
+    ratingHelp:
+      "Tap a star to select your rating.",
+    commentTitle: "Your review",
+    optional: "Optional",
+    commentPlaceholder:
+      "Share your experience with this worker",
+    submit: "Submit Review",
+    submitting: "Submitting review...",
+    ratingRequiredTitle: "Select a rating",
+    ratingRequiredMessage:
+      "Please select between 1 and 5 stars.",
+    completedOnlyTitle:
+      "Review unavailable",
+    completedOnlyMessage:
+      "A review can only be submitted after the booking has been completed.",
+    alreadyReviewedTitle:
+      "Review already submitted",
+    alreadyReviewedMessage:
+      "You have already reviewed this booking.",
+    loginRequired:
+      "Please log in before submitting a review.",
+    customerOnly:
+      "Only customer accounts can submit reviews.",
+    reviewFailed: "Review failed",
+    unexpectedError:
+      "Something went wrong while submitting the review.",
+    successTitle: "Review submitted",
+    successMessage:
+      "Thank you. Your review was submitted successfully.",
+    backToBookings: "Back to My Bookings",
+    poor: "Poor",
+    fair: "Fair",
+    good: "Good",
+    veryGood: "Very Good",
+    excellent: "Excellent",
+  },
+
+  ta: {
+    back: "பின்செல்",
+    title: "உங்கள் அனுபவத்தை மதிப்பிடுங்கள்",
+    subtitle:
+      "உங்கள் மதிப்புரை மற்ற வாடிக்கையாளர்கள் நம்பகமான பணியாளர்களைத் தேர்ந்தெடுக்க உதவும்.",
+    loading:
+      "மதிப்புரை தகவல் ஏற்றப்படுகிறது...",
+    loadFailed:
+      "முன்பதிவு தகவலை ஏற்ற முடியவில்லை.",
+    tryAgain: "மீண்டும் முயற்சிக்கவும்",
+    worker: "பணியாளர்",
+    service: "சேவை",
+    location: "இடம்",
+    ratingTitle: "உங்கள் மதிப்பீடு",
+    ratingHelp:
+      "உங்கள் மதிப்பீட்டைத் தேர்ந்தெடுக்க நட்சத்திரத்தைத் தொடவும்.",
+    commentTitle: "உங்கள் மதிப்புரை",
+    optional: "விருப்பத்திற்குரியது",
+    commentPlaceholder:
+      "இந்த பணியாளருடன் ஏற்பட்ட அனுபவத்தைப் பகிரவும்",
+    submit: "மதிப்புரையை அனுப்புங்கள்",
+    submitting:
+      "மதிப்புரை அனுப்பப்படுகிறது...",
+    ratingRequiredTitle:
+      "மதிப்பீட்டைத் தேர்ந்தெடுக்கவும்",
+    ratingRequiredMessage:
+      "1 முதல் 5 நட்சத்திரங்களுக்குள் தேர்ந்தெடுக்கவும்.",
+    completedOnlyTitle:
+      "மதிப்புரை வழங்க முடியாது",
+    completedOnlyMessage:
+      "முன்பதிவு முடிக்கப்பட்ட பின்னரே மதிப்புரையை அனுப்ப முடியும்.",
+    alreadyReviewedTitle:
+      "மதிப்புரை ஏற்கனவே அனுப்பப்பட்டது",
+    alreadyReviewedMessage:
+      "இந்த முன்பதிவுக்கு நீங்கள் ஏற்கனவே மதிப்புரை வழங்கியுள்ளீர்கள்.",
+    loginRequired:
+      "மதிப்புரையை அனுப்புவதற்கு முன் உள்நுழையவும்.",
+    customerOnly:
+      "வாடிக்கையாளர் கணக்குகள் மட்டுமே மதிப்புரைகளை அனுப்ப முடியும்.",
+    reviewFailed:
+      "மதிப்புரையை அனுப்ப முடியவில்லை",
+    unexpectedError:
+      "மதிப்புரையை அனுப்பும்போது ஏதோ தவறு ஏற்பட்டது.",
+    successTitle:
+      "மதிப்புரை அனுப்பப்பட்டது",
+    successMessage:
+      "நன்றி. உங்கள் மதிப்புரை வெற்றிகரமாக அனுப்பப்பட்டது.",
+    backToBookings:
+      "எனது முன்பதிவுகளுக்குத் திரும்பவும்",
+    poor: "மோசம்",
+    fair: "சுமார்",
+    good: "நன்று",
+    veryGood: "மிகவும் நன்று",
+    excellent: "சிறப்பு",
+  },
+
+  si: {
+    back: "ආපසු",
+    title: "ඔබගේ අත්දැකීම ඇගයීමට ලක් කරන්න",
+    subtitle:
+      "ඔබගේ සමාලෝචනය වෙනත් පාරිභෝගිකයින්ට විශ්වාසදායක සේවා සපයන්නන් තෝරාගැනීමට උපකාරී වේ.",
+    loading:
+      "සමාලෝචන තොරතුරු පූරණය වෙමින්...",
+    loadFailed:
+      "වෙන්කිරීමේ තොරතුරු පූරණය කළ නොහැක.",
+    tryAgain: "නැවත උත්සාහ කරන්න",
+    worker: "සේවා සපයන්නා",
+    service: "සේවාව",
+    location: "ස්ථානය",
+    ratingTitle: "ඔබගේ ඇගයීම",
+    ratingHelp:
+      "ඇගයීම තේරීමට තරුවක් ඔබන්න.",
+    commentTitle: "ඔබගේ සමාලෝචනය",
+    optional: "අත්‍යවශ්‍ය නොවේ",
+    commentPlaceholder:
+      "මෙම සේවා සපයන්නා සමඟ ඔබගේ අත්දැකීම බෙදාගන්න",
+    submit: "සමාලෝචනය යවන්න",
+    submitting:
+      "සමාලෝචනය යවමින්...",
+    ratingRequiredTitle:
+      "ඇගයීමක් තෝරන්න",
+    ratingRequiredMessage:
+      "තරු 1 සිට 5 දක්වා ඇගයීමක් තෝරන්න.",
+    completedOnlyTitle:
+      "සමාලෝචනය ලබා දිය නොහැක",
+    completedOnlyMessage:
+      "සමාලෝචනයක් ලබා දිය හැක්කේ වෙන්කිරීම සම්පූර්ණ වූ පසුව පමණි.",
+    alreadyReviewedTitle:
+      "සමාලෝචනය දැනටමත් යවා ඇත",
+    alreadyReviewedMessage:
+      "ඔබ මෙම වෙන්කිරීම සඳහා දැනටමත් සමාලෝචනයක් ලබා දී ඇත.",
+    loginRequired:
+      "සමාලෝචනයක් යැවීමට පෙර පිවිසෙන්න.",
+    customerOnly:
+      "සමාලෝචන යැවිය හැක්කේ පාරිභෝගික ගිණුම්වලට පමණි.",
+    reviewFailed:
+      "සමාලෝචනය අසාර්ථකයි",
+    unexpectedError:
+      "සමාලෝචනය යැවීමේදී දෝෂයක් ඇති විය.",
+    successTitle:
+      "සමාලෝචනය යවන ලදී",
+    successMessage:
+      "ස්තූතියි. ඔබගේ සමාලෝචනය සාර්ථකව යවන ලදී.",
+    backToBookings:
+      "මගේ වෙන්කිරීම් වෙත ආපසු",
+    poor: "දුර්වලයි",
+    fair: "සාමාන්‍යයි",
+    good: "හොඳයි",
+    veryGood: "ඉතා හොඳයි",
+    excellent: "විශිෂ්ටයි",
+  },
+};
+
+const normalizeParameter = (
+  value: string | string[] | undefined
+): string => {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  return value ?? "";
 };
 
 export default function ReviewScreen() {
-  const { bookingId } = useLocalSearchParams<{
-    bookingId: string | string[];
+  const params = useLocalSearchParams<{
+    bookingId?: string | string[];
   }>();
 
-  const selectedBookingId = Array.isArray(bookingId)
-    ? bookingId[0]
-    : bookingId;
+  const bookingId = normalizeParameter(
+    params.bookingId
+  );
+
+  const {
+    language,
+    languageName,
+  } = useLanguage();
+
+  const text = screenTranslations[language];
 
   const [booking, setBooking] =
-    useState<BookingSummary | null>(null);
+    useState<BookingDetails | null>(null);
 
   const [worker, setWorker] =
-    useState<WorkerSummary | null>(null);
+    useState<WorkerDetails | null>(null);
 
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
+  const [rating, setRating] =
+    useState(0);
 
-  const [alreadyReviewed, setAlreadyReviewed] =
-    useState(false);
+  const [comment, setComment] =
+    useState("");
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] =
+    useState(true);
+
   const [isSubmitting, setIsSubmitting] =
     useState(false);
 
   const [errorMessage, setErrorMessage] =
     useState("");
 
-  useEffect(() => {
-    loadReviewPage();
-  }, [selectedBookingId]);
+  const [alreadyReviewed, setAlreadyReviewed] =
+    useState(false);
 
-  const loadReviewPage = async () => {
-    if (!selectedBookingId) {
-      setErrorMessage("Booking ID is missing.");
+  const loadReviewInformation = async () => {
+    if (!bookingId) {
+      setErrorMessage(text.loadFailed);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     setErrorMessage("");
+    setAlreadyReviewed(false);
 
     try {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (userError || !user) {
+        Alert.alert(
+          text.reviewFailed,
+          text.loginRequired
+        );
+
         router.replace("/login");
+        return;
+      }
+
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (
+        profileError ||
+        !profileData
+      ) {
+        setErrorMessage(text.loadFailed);
+        return;
+      }
+
+      if (profileData.role !== "customer") {
+        Alert.alert(
+          text.reviewFailed,
+          text.customerOnly
+        );
+
+        router.replace("/");
         return;
       }
 
@@ -89,67 +351,51 @@ export default function ReviewScreen() {
       } = await supabase
         .from("bookings")
         .select(
-          `
-            id,
-            customer_id,
-            worker_id,
-            service_category,
-            status
-          `
+          "id, customer_id, worker_id, service_category, status"
         )
-        .eq("id", selectedBookingId)
+        .eq("id", bookingId)
         .eq("customer_id", user.id)
         .single();
 
-      if (bookingError || !bookingData) {
+      if (
+        bookingError ||
+        !bookingData
+      ) {
         console.error(
-          "Review booking error:",
+          "Review booking loading error:",
           bookingError
         );
 
-        setErrorMessage(
-          "This booking could not be loaded."
+        setErrorMessage(text.loadFailed);
+        return;
+      }
+
+      const preparedBooking =
+        bookingData as BookingDetails;
+
+      if (
+        String(preparedBooking.status)
+          .trim()
+          .toLowerCase() !== "completed"
+      ) {
+        Alert.alert(
+          text.completedOnlyTitle,
+          text.completedOnlyMessage,
+          [
+            {
+              text: text.backToBookings,
+              onPress: () =>
+                router.replace(
+                  "/my-bookings"
+                ),
+            },
+          ]
         );
 
         return;
       }
 
-      const loadedBooking =
-        bookingData as BookingSummary;
-
-      if (loadedBooking.status !== "completed") {
-        setErrorMessage(
-          "Only completed bookings can be reviewed."
-        );
-
-        return;
-      }
-
-      setBooking(loadedBooking);
-
-      const {
-        data: workerData,
-        error: workerError,
-      } = await supabase
-        .from("worker_profiles")
-        .select("id, full_name, category, town")
-        .eq("id", loadedBooking.worker_id)
-        .single();
-
-      if (workerError || !workerData) {
-        console.error(
-          "Review worker error:",
-          workerError
-        );
-
-        setErrorMessage(
-          "The worker profile could not be loaded."
-        );
-
-        return;
-      }
-
-      setWorker(workerData as WorkerSummary);
+      setBooking(preparedBooking);
 
       const {
         data: existingReview,
@@ -157,7 +403,8 @@ export default function ReviewScreen() {
       } = await supabase
         .from("reviews")
         .select("id")
-        .eq("booking_id", loadedBooking.id)
+        .eq("booking_id", bookingId)
+        .eq("customer_id", user.id)
         .maybeSingle();
 
       if (existingReviewError) {
@@ -167,39 +414,91 @@ export default function ReviewScreen() {
         );
       }
 
-      setAlreadyReviewed(Boolean(existingReview));
+      if (existingReview) {
+        setAlreadyReviewed(true);
+      }
+
+      const {
+        data: workerData,
+        error: workerError,
+      } = await supabase
+        .from("worker_profiles")
+        .select(
+          "id, full_name, category, town"
+        )
+        .eq("id", preparedBooking.worker_id)
+        .single();
+
+      if (
+        workerError ||
+        !workerData
+      ) {
+        console.error(
+          "Review worker loading error:",
+          workerError
+        );
+
+        setErrorMessage(text.loadFailed);
+        return;
+      }
+
+      setWorker(workerData as WorkerDetails);
     } catch (error) {
       console.error(
-        "Unexpected review page error:",
+        "Unexpected review loading error:",
         error
       );
 
-      setErrorMessage(
-        "Something went wrong while opening the review page."
-      );
+      setErrorMessage(text.loadFailed);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSubmitReview = async () => {
+  useEffect(() => {
+    void loadReviewInformation();
+  }, [bookingId, language]);
+
+  const ratingLabel = useMemo(() => {
+    switch (rating) {
+      case 1:
+        return text.poor;
+
+      case 2:
+        return text.fair;
+
+      case 3:
+        return text.good;
+
+      case 4:
+        return text.veryGood;
+
+      case 5:
+        return text.excellent;
+
+      default:
+        return "";
+    }
+  }, [rating, text]);
+
+  const submitReview = async () => {
     if (!booking || !worker) {
       return;
     }
 
-    if (rating < 1 || rating > 5) {
+    if (alreadyReviewed) {
       Alert.alert(
-        "Rating required",
-        "Please select a rating from 1 to 5 stars."
+        text.alreadyReviewedTitle,
+        text.alreadyReviewedMessage
       );
 
       return;
     }
 
-    if (comment.trim().length < 3) {
+    if (rating < 1 || rating > 5) {
       Alert.alert(
-        "Comment required",
-        "Please write a short comment about the service."
+        text.ratingRequiredTitle,
+        text.ratingRequiredMessage
       );
 
       return;
@@ -210,60 +509,70 @@ export default function ReviewScreen() {
     try {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (userError || !user) {
+        Alert.alert(
+          text.reviewFailed,
+          text.loginRequired
+        );
+
         router.replace("/login");
         return;
       }
 
-      const { error } = await supabase
+      const {
+        error: reviewError,
+      } = await supabase
         .from("reviews")
         .insert({
           booking_id: booking.id,
           customer_id: user.id,
-          worker_id: worker.id,
+          worker_id: booking.worker_id,
           rating,
-          comment: comment.trim(),
+          comment:
+            comment.trim() === ""
+              ? null
+              : comment.trim(),
         });
 
-      if (error) {
-        console.error(
-          "Review submission error:",
-          error
-        );
+      if (reviewError) {
+        const errorText =
+          reviewError.message.toLowerCase();
 
         if (
-          error.code === "23505" ||
-          error.message
-            .toLowerCase()
-            .includes("duplicate")
+          errorText.includes("duplicate") ||
+          errorText.includes("unique")
         ) {
+          setAlreadyReviewed(true);
+
           Alert.alert(
-            "Review already submitted",
-            "This booking already has a review."
+            text.alreadyReviewedTitle,
+            text.alreadyReviewedMessage
           );
 
-          setAlreadyReviewed(true);
           return;
         }
 
         Alert.alert(
-          "Review submission failed",
-          error.message
+          text.reviewFailed,
+          reviewError.message
         );
 
         return;
       }
 
       Alert.alert(
-        "Review submitted",
-        `Thank you for reviewing ${worker.full_name}.`,
+        text.successTitle,
+        text.successMessage,
         [
           {
-            text: "Return to My Bookings",
+            text: text.backToBookings,
             onPress: () =>
-              router.replace("/my-bookings"),
+              router.replace(
+                "/my-bookings"
+              ),
           },
         ]
       );
@@ -274,8 +583,8 @@ export default function ReviewScreen() {
       );
 
       Alert.alert(
-        "Unexpected error",
-        "Something went wrong while submitting the review."
+        text.reviewFailed,
+        text.unexpectedError
       );
     } finally {
       setIsSubmitting(false);
@@ -292,65 +601,50 @@ export default function ReviewScreen() {
           />
 
           <Text style={styles.loadingText}>
-            Preparing your review...
+            {text.loading}
           </Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (errorMessage !== "") {
+  if (
+    errorMessage !== "" ||
+    !booking ||
+    !worker
+  ) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorIcon}>⚠️</Text>
-
-          <Text style={styles.errorTitle}>
-            Review unavailable
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorIcon}>
+            ⚠️
           </Text>
 
-          <Text style={styles.errorText}>
-            {errorMessage}
+          <Text style={styles.errorTitle}>
+            {text.loadFailed}
           </Text>
 
           <Pressable
-            style={styles.backLink}
-            onPress={() =>
-              router.replace("/my-bookings")
-            }
+            style={styles.retryButton}
+            onPress={loadReviewInformation}
           >
-            <Text style={styles.backLinkText}>
-              Return to My Bookings
+            <Text style={styles.retryButtonText}>
+              {text.tryAgain}
             </Text>
           </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (alreadyReviewed) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centerContainer}>
-          <Text style={styles.successIcon}>✅</Text>
-
-          <Text style={styles.errorTitle}>
-            Review already submitted
-          </Text>
-
-          <Text style={styles.errorText}>
-            Only one review is permitted for each
-            completed booking.
-          </Text>
 
           <Pressable
-            style={styles.primaryButton}
+            style={styles.backToBookingsButton}
             onPress={() =>
               router.replace("/my-bookings")
             }
           >
-            <Text style={styles.primaryButtonText}>
-              Return to My Bookings
+            <Text
+              style={
+                styles.backToBookingsText
+              }
+            >
+              {text.backToBookings}
             </Text>
           </Pressable>
         </View>
@@ -370,115 +664,268 @@ export default function ReviewScreen() {
       >
         <ScrollView
           contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backText}>
-              ← Back to My Bookings
+          <View style={styles.header}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => router.back()}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.backText}>
+                ← {text.back}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.languageButton}
+              onPress={() =>
+                router.push("/language")
+              }
+              disabled={isSubmitting}
+            >
+              <Text style={styles.languageText}>
+                🌐 {languageName}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.titleSection}>
+            <View style={styles.titleIcon}>
+              <Text style={styles.titleIconText}>
+                ⭐
+              </Text>
+            </View>
+
+            <Text style={styles.title}>
+              {text.title}
             </Text>
-          </Pressable>
 
-          <Text style={styles.title}>
-            Rate Your Service
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Your feedback helps customers choose trusted
-            workers.
-          </Text>
+            <Text style={styles.subtitle}>
+              {text.subtitle}
+            </Text>
+          </View>
 
           <View style={styles.workerCard}>
-            <View style={styles.workerIcon}>
-              <Text style={styles.workerIconText}>🛠️</Text>
+            <View style={styles.workerAvatar}>
+              <Text style={styles.workerAvatarText}>
+                🛠️
+              </Text>
             </View>
 
             <View style={styles.workerInformation}>
               <Text style={styles.workerName}>
-                {worker?.full_name}
+                {worker.full_name ||
+                  "FixMate Worker"}
               </Text>
 
               <Text style={styles.workerCategory}>
-                {worker?.category}
+                {worker.category ||
+                  booking.service_category}
               </Text>
 
               <Text style={styles.workerTown}>
-                📍 {worker?.town}
+                📍 {worker.town || "-"}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.label}>
-            Your rating *
-          </Text>
+          <View style={styles.bookingCard}>
+            <View style={styles.informationRow}>
+              <Text style={styles.informationLabel}>
+                {text.worker}
+              </Text>
 
-          <View style={styles.starRow}>
-            {[1, 2, 3, 4, 5].map((value) => (
+              <Text style={styles.informationValue}>
+                {worker.full_name}
+              </Text>
+            </View>
+
+            <View style={styles.informationRow}>
+              <Text style={styles.informationLabel}>
+                {text.service}
+              </Text>
+
+              <Text style={styles.informationValue}>
+                {booking.service_category}
+              </Text>
+            </View>
+
+            <View style={styles.informationRow}>
+              <Text style={styles.informationLabel}>
+                {text.location}
+              </Text>
+
+              <Text style={styles.informationValue}>
+                {worker.town || "-"}
+              </Text>
+            </View>
+          </View>
+
+          {alreadyReviewed ? (
+            <View style={styles.reviewedCard}>
+              <Text style={styles.reviewedIcon}>
+                ✓
+              </Text>
+
+              <Text style={styles.reviewedTitle}>
+                {text.alreadyReviewedTitle}
+              </Text>
+
+              <Text style={styles.reviewedText}>
+                {text.alreadyReviewedMessage}
+              </Text>
+
               <Pressable
-                key={value}
-                onPress={() => setRating(value)}
-                style={styles.starButton}
+                style={styles.returnButton}
+                onPress={() =>
+                  router.replace(
+                    "/my-bookings"
+                  )
+                }
               >
-                <Text style={styles.star}>
-                  {value <= rating ? "★" : "☆"}
+                <Text
+                  style={
+                    styles.returnButtonText
+                  }
+                >
+                  {text.backToBookings}
                 </Text>
               </Pressable>
-            ))}
-          </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.ratingCard}>
+                <Text style={styles.sectionTitle}>
+                  {text.ratingTitle}
+                </Text>
 
-          <Text style={styles.ratingLabel}>
-            {rating === 0
-              ? "Select a rating"
-              : `${rating} out of 5 stars`}
-          </Text>
+                <Text style={styles.ratingHelp}>
+                  {text.ratingHelp}
+                </Text>
 
-          <Text style={styles.label}>
-            Review comment *
-          </Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map(
+                    (starValue) => {
+                      const isSelected =
+                        starValue <= rating;
 
-          <TextInput
-            style={styles.textArea}
-            value={comment}
-            onChangeText={setComment}
-            placeholder="Describe your experience with this worker"
-            placeholderTextColor="#9CA3AF"
-            multiline
-            numberOfLines={6}
-            textAlignVertical="top"
-            maxLength={500}
-          />
+                      return (
+                        <Pressable
+                          key={starValue}
+                          style={styles.starButton}
+                          onPress={() =>
+                            setRating(starValue)
+                          }
+                          disabled={isSubmitting}
+                        >
+                          <Text
+                            style={[
+                              styles.starText,
+                              isSelected &&
+                                styles.selectedStarText,
+                            ]}
+                          >
+                            {isSelected
+                              ? "★"
+                              : "☆"}
+                          </Text>
+                        </Pressable>
+                      );
+                    }
+                  )}
+                </View>
 
-          <Text style={styles.characterCount}>
-            {comment.length}/500
-          </Text>
+                {ratingLabel !== "" && (
+                  <View
+                    style={
+                      styles.ratingLabelBadge
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.ratingLabelText
+                      }
+                    >
+                      {rating}/5 — {ratingLabel}
+                    </Text>
+                  </View>
+                )}
+              </View>
 
-          <View style={styles.informationCard}>
-            <Text style={styles.informationText}>
-              Your rating will update the worker’s public
-              average rating.
-            </Text>
-          </View>
+              <View style={styles.commentCard}>
+                <View style={styles.commentTitleRow}>
+                  <Text style={styles.sectionTitle}>
+                    {text.commentTitle}
+                  </Text>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.pressedButton,
-              isSubmitting &&
-                styles.disabledButton,
-            ]}
-            onPress={handleSubmitReview}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                Submit Review
-              </Text>
-            )}
-          </Pressable>
+                  <Text style={styles.optionalText}>
+                    {text.optional}
+                  </Text>
+                </View>
+
+                <TextInput
+                  style={styles.commentInput}
+                  value={comment}
+                  onChangeText={setComment}
+                  placeholder={
+                    text.commentPlaceholder
+                  }
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  textAlignVertical="top"
+                  editable={!isSubmitting}
+                  maxLength={500}
+                />
+
+                <Text style={styles.characterCount}>
+                  {comment.length}/500
+                </Text>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  pressed &&
+                    styles.pressedButton,
+                  isSubmitting &&
+                    styles.disabledButton,
+                ]}
+                onPress={submitReview}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <View
+                    style={
+                      styles.submittingRow
+                    }
+                  >
+                    <ActivityIndicator
+                      size="small"
+                      color="#FFFFFF"
+                    />
+
+                    <Text
+                      style={
+                        styles.submitButtonText
+                      }
+                    >
+                      {text.submitting}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text
+                    style={
+                      styles.submitButtonText
+                    }
+                  >
+                    {text.submit}
+                  </Text>
+                )}
+              </Pressable>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -490,179 +937,379 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7F4FF",
   },
+
   keyboardView: {
     flex: 1,
   },
+
   content: {
-    paddingHorizontal: 22,
-    paddingTop: 22,
+    paddingHorizontal: 20,
+    paddingTop: 18,
     paddingBottom: 50,
   },
+
   centerContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  loadingText: {
+    marginTop: 14,
+    color: "#6B7280",
+  },
+
+  errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 30,
   },
-  loadingText: {
+
+  errorIcon: {
+    fontSize: 48,
+  },
+
+  errorTitle: {
     marginTop: 14,
-    color: "#6B7280",
+    fontSize: 19,
+    fontWeight: "800",
+    textAlign: "center",
+    color: "#1F2937",
   },
-  backButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 10,
+
+  retryButton: {
+    paddingHorizontal: 23,
+    paddingVertical: 13,
+    marginTop: 20,
+    borderRadius: 10,
+    backgroundColor: "#6D28D9",
   },
-  backText: {
+
+  retryButtonText: {
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+
+  backToBookingsButton: {
+    paddingVertical: 14,
+  },
+
+  backToBookingsText: {
     fontWeight: "700",
     color: "#6D28D9",
   },
-  title: {
-    marginTop: 10,
-    fontSize: 30,
+
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  backButton: {
+    paddingVertical: 10,
+  },
+
+  backText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6D28D9",
+  },
+
+  languageButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+  },
+
+  languageText: {
+    fontSize: 12,
     fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  titleSection: {
+    alignItems: "center",
+    marginTop: 25,
+  },
+
+  titleIcon: {
+    width: 72,
+    height: 72,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 36,
+    backgroundColor: "#FEF3C7",
+  },
+
+  titleIconText: {
+    fontSize: 35,
+  },
+
+  title: {
+    marginTop: 18,
+    fontSize: 28,
+    fontWeight: "800",
+    textAlign: "center",
     color: "#1F2937",
   },
+
   subtitle: {
-    marginTop: 7,
-    marginBottom: 22,
-    fontSize: 14,
+    maxWidth: 330,
+    marginTop: 8,
+    fontSize: 13,
     lineHeight: 21,
+    textAlign: "center",
     color: "#6B7280",
   },
+
   workerCard: {
     flexDirection: "row",
     alignItems: "center",
     padding: 17,
+    marginTop: 24,
     borderWidth: 1,
     borderColor: "#DDD6FE",
-    borderRadius: 14,
+    borderRadius: 15,
     backgroundColor: "#FFFFFF",
   },
-  workerIcon: {
-    width: 58,
-    height: 58,
+
+  workerAvatar: {
+    width: 55,
+    height: 55,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 29,
+    borderRadius: 28,
     backgroundColor: "#EDE9FE",
   },
-  workerIconText: {
-    fontSize: 29,
+
+  workerAvatarText: {
+    fontSize: 27,
   },
+
   workerInformation: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: 13,
   },
+
   workerName: {
     fontSize: 17,
     fontWeight: "800",
     color: "#1F2937",
   },
+
   workerCategory: {
     marginTop: 3,
+    fontSize: 13,
     fontWeight: "700",
     color: "#6D28D9",
   },
+
   workerTown: {
     marginTop: 4,
+    fontSize: 11,
+    color: "#6B7280",
+  },
+
+  bookingCard: {
+    padding: 17,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+  },
+
+  informationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 9,
+  },
+
+  informationLabel: {
+    flex: 1,
+    paddingRight: 10,
     fontSize: 12,
     color: "#6B7280",
   },
-  label: {
-    marginTop: 24,
-    marginBottom: 9,
-    fontSize: 15,
-    fontWeight: "800",
+
+  informationValue: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "right",
     color: "#374151",
   },
-  starRow: {
-    flexDirection: "row",
-    justifyContent: "center",
+
+  ratingCard: {
+    alignItems: "center",
+    padding: 20,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
   },
-  starButton: {
-    paddingHorizontal: 4,
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#1F2937",
   },
-  star: {
-    fontSize: 43,
-    color: "#F59E0B",
-  },
-  ratingLabel: {
-    marginTop: 7,
+
+  ratingHelp: {
+    marginTop: 6,
+    fontSize: 12,
     textAlign: "center",
     color: "#6B7280",
   },
-  textArea: {
-    minHeight: 135,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 11,
-    backgroundColor: "#FFFFFF",
-    fontSize: 15,
-    color: "#111827",
+
+  starsRow: {
+    flexDirection: "row",
+    marginTop: 17,
   },
-  characterCount: {
-    marginTop: 5,
-    textAlign: "right",
+
+  starButton: {
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+  },
+
+  starText: {
+    fontSize: 43,
+    color: "#D1D5DB",
+  },
+
+  selectedStarText: {
+    color: "#F59E0B",
+  },
+
+  ratingLabelBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 13,
+    borderRadius: 15,
+    backgroundColor: "#FEF3C7",
+  },
+
+  ratingLabelText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+
+  commentCard: {
+    padding: 18,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+  },
+
+  commentTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  optionalText: {
     fontSize: 11,
     color: "#9CA3AF",
   },
-  informationCard: {
+
+  commentInput: {
+    minHeight: 130,
     padding: 14,
-    marginTop: 18,
+    marginTop: 13,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
     borderRadius: 11,
-    backgroundColor: "#EFF6FF",
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#111827",
   },
-  informationText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#1E40AF",
+
+  characterCount: {
+    marginTop: 7,
+    fontSize: 10,
+    textAlign: "right",
+    color: "#9CA3AF",
   },
-  primaryButton: {
-    minHeight: 55,
+
+  submitButton: {
+    minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-    marginTop: 20,
+    marginTop: 19,
     borderRadius: 12,
     backgroundColor: "#6D28D9",
   },
-  primaryButtonText: {
-    fontSize: 16,
+
+  submitButtonText: {
+    marginLeft: 7,
+    fontSize: 15,
     fontWeight: "800",
     color: "#FFFFFF",
   },
-  pressedButton: {
-    opacity: 0.8,
+
+  submittingRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
+
+  reviewedCard: {
+    alignItems: "center",
+    padding: 30,
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    borderRadius: 15,
+    backgroundColor: "#F0FDF4",
+  },
+
+  reviewedIcon: {
+    fontSize: 38,
+    fontWeight: "800",
+    color: "#047857",
+  },
+
+  reviewedTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+    color: "#047857",
+  },
+
+  reviewedText: {
+    marginTop: 7,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
+    color: "#4B5563",
+  },
+
+  returnButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    marginTop: 18,
+    borderRadius: 10,
+    backgroundColor: "#6D28D9",
+  },
+
+  returnButtonText: {
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+
+  pressedButton: {
+    opacity: 0.82,
+  },
+
   disabledButton: {
     opacity: 0.55,
-  },
-  errorIcon: {
-    fontSize: 44,
-  },
-  successIcon: {
-    fontSize: 44,
-  },
-  errorTitle: {
-    marginTop: 13,
-    fontSize: 20,
-    fontWeight: "800",
-    textAlign: "center",
-    color: "#1F2937",
-  },
-  errorText: {
-    marginTop: 8,
-    lineHeight: 21,
-    textAlign: "center",
-    color: "#6B7280",
-  },
-  backLink: {
-    padding: 16,
-    marginTop: 12,
-  },
-  backLinkText: {
-    fontWeight: "800",
-    color: "#6D28D9",
   },
 });

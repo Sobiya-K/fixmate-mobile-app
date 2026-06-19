@@ -2,44 +2,39 @@ import { router } from "expo-router";
 import { useState } from "react";
 
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase";
 
-type UserRole =
-  | "customer"
-  | "worker"
-  | "admin";
+type UserRole = "customer" | "worker" | "admin";
 
 export default function LoginScreen() {
-  const [email, setEmail] =
-    useState("");
+  const { languageName, t } = useLanguage();
 
-  const [password, setPassword] =
-    useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const [isLoading, setIsLoading] =
-    useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    const cleanedEmail =
-      email.trim().toLowerCase();
+    const cleanedEmail = email.trim().toLowerCase();
 
     if (!cleanedEmail) {
       Alert.alert(
-        "Email required",
-        "Please enter your email address."
+        t("login.email"),
+        t("login.emailPlaceholder")
       );
 
       return;
@@ -47,8 +42,8 @@ export default function LoginScreen() {
 
     if (!password) {
       Alert.alert(
-        "Password required",
-        "Please enter your password."
+        t("login.password"),
+        t("login.passwordPlaceholder")
       );
 
       return;
@@ -60,19 +55,15 @@ export default function LoginScreen() {
       const {
         data: signInData,
         error: signInError,
-      } = await supabase.auth
-        .signInWithPassword({
-          email: cleanedEmail,
-          password,
-        });
+      } = await supabase.auth.signInWithPassword({
+        email: cleanedEmail,
+        password,
+      });
 
-      if (
-        signInError ||
-        !signInData.user
-      ) {
+      if (signInError || !signInData.user) {
         Alert.alert(
-          "Login failed",
-          signInError?.message ??
+          t("login.failed"),
+          signInError?.message ||
             "The account could not be logged in."
         );
 
@@ -85,62 +76,46 @@ export default function LoginScreen() {
       } = await supabase
         .from("profiles")
         .select("role")
-        .eq(
-          "id",
-          signInData.user.id
-        )
+        .eq("id", signInData.user.id)
         .single();
 
-      if (
-        profileError ||
-        !profileData
-      ) {
+      if (profileError || !profileData) {
         console.error(
-          "Login profile error:",
+          "Login profile loading error:",
           profileError
         );
 
         await supabase.auth.signOut();
 
         Alert.alert(
-          "Profile unavailable",
+          t("login.failed"),
           "The profile connected to this account could not be loaded."
         );
 
         return;
       }
 
-      const role =
-        profileData.role as UserRole;
+      const role = profileData.role as UserRole;
 
       if (role === "customer") {
-        router.replace(
-          "/customer-dashboard"
-        );
-
+        router.replace("/customer-dashboard");
         return;
       }
 
       if (role === "worker") {
-        router.replace(
-          "/worker-dashboard"
-        );
-
+        router.replace("/worker-dashboard");
         return;
       }
 
       if (role === "admin") {
-        router.replace(
-          "/admin-dashboard"
-        );
-
+        router.replace("/admin-dashboard");
         return;
       }
 
       await supabase.auth.signOut();
 
       Alert.alert(
-        "Unsupported account",
+        t("login.failed"),
         "This account does not have a valid FixMate role."
       );
     } catch (error) {
@@ -150,7 +125,7 @@ export default function LoginScreen() {
       );
 
       Alert.alert(
-        "Unexpected error",
+        t("login.failed"),
         "Something went wrong while logging in."
       );
     } finally {
@@ -159,9 +134,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-    >
+    <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={
@@ -171,14 +144,34 @@ export default function LoginScreen() {
         }
       >
         <ScrollView
-          contentContainerStyle={
-            styles.content
-          }
+          contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={
-            false
-          }
+          showsVerticalScrollIndicator={false}
         >
+          <View style={styles.topRow}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => router.replace("/")}
+              disabled={isLoading}
+            >
+              <Text style={styles.backText}>
+                ← {t("common.back")}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.languageButton}
+              onPress={() =>
+                router.push("/language")
+              }
+              disabled={isLoading}
+            >
+              <Text style={styles.languageText}>
+                🌐 {languageName}
+              </Text>
+            </Pressable>
+          </View>
+
           <View style={styles.logoCircle}>
             <Text style={styles.logoText}>
               🛠️
@@ -186,28 +179,29 @@ export default function LoginScreen() {
           </View>
 
           <Text style={styles.appName}>
-            FixMate
+            {t("common.appName")}
           </Text>
 
           <Text style={styles.title}>
-            Welcome Back
+            {t("login.title")}
           </Text>
 
           <Text style={styles.subtitle}>
-            Log in to continue managing your
-            FixMate services.
+            {t("login.subtitle")}
           </Text>
 
           <View style={styles.formCard}>
             <Text style={styles.label}>
-              Email address
+              {t("login.email")}
             </Text>
 
             <TextInput
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder="Enter your email"
+              placeholder={t(
+                "login.emailPlaceholder"
+              )}
               placeholderTextColor="#9CA3AF"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -216,30 +210,28 @@ export default function LoginScreen() {
             />
 
             <Text style={styles.label}>
-              Password
+              {t("login.password")}
             </Text>
 
             <TextInput
               style={styles.input}
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter your password"
+              placeholder={t(
+                "login.passwordPlaceholder"
+              )}
               placeholderTextColor="#9CA3AF"
               secureTextEntry
               autoCapitalize="none"
               editable={!isLoading}
-              onSubmitEditing={
-                handleLogin
-              }
+              onSubmitEditing={handleLogin}
             />
 
             <Pressable
               style={({ pressed }) => [
                 styles.loginButton,
-
                 pressed &&
                   styles.pressedButton,
-
                 isLoading &&
                   styles.disabledButton,
               ]}
@@ -256,21 +248,17 @@ export default function LoginScreen() {
                     styles.loginButtonText
                   }
                 >
-                  Log In
+                  {t("login.button")}
                 </Text>
               )}
             </Pressable>
           </View>
 
-          <View
-            style={styles.registerRow}
-          >
+          <View style={styles.registerRow}>
             <Text
-              style={
-                styles.registerQuestion
-              }
+              style={styles.registerQuestion}
             >
-              Don&apos;t have an account?
+              {t("login.noAccount")}
             </Text>
 
             <Pressable
@@ -279,29 +267,11 @@ export default function LoginScreen() {
               }
               disabled={isLoading}
             >
-              <Text
-                style={
-                  styles.registerLink
-                }
-              >
-                Create Account
+              <Text style={styles.registerLink}>
+                {t("login.createAccount")}
               </Text>
             </Pressable>
           </View>
-
-          <Pressable
-            style={styles.homeLink}
-            onPress={() =>
-              router.replace("/")
-            }
-            disabled={isLoading}
-          >
-            <Text
-              style={styles.homeLinkText}
-            >
-              ← Back to Home
-            </Text>
-          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -320,18 +290,50 @@ const styles = StyleSheet.create({
 
   content: {
     flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "center",
     paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingTop: 18,
+    paddingBottom: 40,
+  },
+
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  backButton: {
+    paddingVertical: 10,
+  },
+
+  backText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6D28D9",
+  },
+
+  languageButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+  },
+
+  languageText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6D28D9",
   },
 
   logoCircle: {
-    width: 74,
-    height: 74,
+    width: 76,
+    height: 76,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 37,
+    alignSelf: "center",
+    marginTop: 42,
+    borderRadius: 38,
     backgroundColor: "#EDE9FE",
   },
 
@@ -343,11 +345,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 18,
     fontWeight: "800",
+    textAlign: "center",
     color: "#6D28D9",
   },
 
   title: {
-    marginTop: 17,
+    marginTop: 18,
     fontSize: 31,
     fontWeight: "800",
     textAlign: "center",
@@ -355,7 +358,8 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    maxWidth: 310,
+    maxWidth: 320,
+    alignSelf: "center",
     marginTop: 8,
     fontSize: 14,
     lineHeight: 21,
@@ -420,6 +424,8 @@ const styles = StyleSheet.create({
   registerRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
     marginTop: 22,
   },
 
@@ -432,17 +438,6 @@ const styles = StyleSheet.create({
   registerLink: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#6D28D9",
-  },
-
-  homeLink: {
-    padding: 15,
-    marginTop: 5,
-  },
-
-  homeLinkText: {
-    fontSize: 14,
-    fontWeight: "700",
     color: "#6D28D9",
   },
 });

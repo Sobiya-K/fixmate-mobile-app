@@ -1,39 +1,111 @@
 import { router } from "expo-router";
+
 import {
-    Pressable,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    View,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
+import { useLanguage } from "@/contexts/LanguageContext";
+
 export default function WelcomeScreen() {
+  const {
+    languageName,
+    t,
+  } = useLanguage();
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoIcon}>🛠️</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topRow}>
+          <Text style={styles.brandName}>
+            {t("common.appName")}
+          </Text>
+
+          <Pressable
+            style={styles.languageButton}
+            onPress={() =>
+              router.push("/language")
+            }
+          >
+            <Text style={styles.languageButtonText}>
+              🌐 {languageName}
+            </Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.title}>FixMate</Text>
+        <View style={styles.heroArea}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoIcon}>
+              🛠️
+            </Text>
+          </View>
 
-        <Text style={styles.subtitle}>
-          Find trusted skilled workers near you
-        </Text>
+          <Text style={styles.title}>
+            {t("welcome.title")}
+          </Text>
 
-        <Text style={styles.description}>
-          Connect with electricians, plumbers, carpenters, cleaners and
-          other local service professionals.
-        </Text>
+          <Text style={styles.subtitle}>
+            {t("welcome.subtitle")}
+          </Text>
+        </View>
+
+        <View style={styles.featureCard}>
+          <View style={styles.featureRow}>
+            <View style={styles.featureIcon}>
+              <Text style={styles.featureIconText}>
+                ✓
+              </Text>
+            </View>
+
+            <Text style={styles.featureText}>
+              Verified skilled workers
+            </Text>
+          </View>
+
+          <View style={styles.featureRow}>
+            <View style={styles.featureIcon}>
+              <Text style={styles.featureIconText}>
+                ⚡
+              </Text>
+            </View>
+
+            <Text style={styles.featureText}>
+              Fast and simple booking
+            </Text>
+          </View>
+
+          <View style={styles.featureRow}>
+            <View style={styles.featureIcon}>
+              <Text style={styles.featureIconText}>
+                ⭐
+              </Text>
+            </View>
+
+            <Text style={styles.featureText}>
+              Customer ratings and reviews
+            </Text>
+          </View>
+        </View>
 
         <Pressable
           style={({ pressed }) => [
             styles.primaryButton,
             pressed && styles.pressedButton,
           ]}
-          onPress={() => router.push("/register")}
+          onPress={() =>
+            router.push("/register")
+          }
         >
-          <Text style={styles.primaryButtonText}>Create Account</Text>
+          <Text style={styles.primaryButtonText}>
+            {t("welcome.createAccount")}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -41,15 +113,30 @@ export default function WelcomeScreen() {
             styles.secondaryButton,
             pressed && styles.pressedButton,
           ]}
-          onPress={() => router.push("/login")}
+          onPress={() =>
+            router.push("/login")
+          }
         >
           <Text style={styles.secondaryButtonText}>
-            I Already Have an Account
+            {t("welcome.login")}
           </Text>
         </Pressable>
 
-        <Text style={styles.version}>FixMate MVP • Version 1.0</Text>
-      </View>
+        <Pressable
+          style={styles.changeLanguageButton}
+          onPress={() =>
+            router.push("/language")
+          }
+        >
+          <Text style={styles.changeLanguageText}>
+            🌐 {t("welcome.changeLanguage")}
+          </Text>
+        </Pressable>
+
+        <Text style={styles.footerText}>
+          Local skills. Trusted service. Better communities.
+        </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -59,81 +146,167 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7F4FF",
   },
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 28,
+
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 35,
   },
-  logoContainer: {
+
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  brandName: {
+    fontSize: 21,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  languageButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+  },
+
+  languageButtonText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  heroArea: {
+    alignItems: "center",
+    marginTop: 56,
+  },
+
+  logoCircle: {
     width: 105,
     height: 105,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
     borderRadius: 53,
     backgroundColor: "#EDE9FE",
   },
+
   logoIcon: {
-    fontSize: 50,
+    fontSize: 51,
   },
+
   title: {
-    marginBottom: 10,
-    fontSize: 42,
+    marginTop: 30,
+    fontSize: 32,
+    lineHeight: 40,
     fontWeight: "800",
-    color: "#6D28D9",
-  },
-  subtitle: {
-    marginBottom: 16,
-    fontSize: 20,
-    fontWeight: "700",
     textAlign: "center",
     color: "#1F2937",
   },
-  description: {
-    maxWidth: 340,
-    marginBottom: 32,
+
+  subtitle: {
+    maxWidth: 320,
+    marginTop: 12,
     fontSize: 15,
     lineHeight: 23,
     textAlign: "center",
     color: "#6B7280",
   },
-  primaryButton: {
-    width: "100%",
-    maxWidth: 340,
+
+  featureCard: {
+    padding: 19,
+    marginTop: 35,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+
+  featureRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
+    marginVertical: 7,
+  },
+
+  featureIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    borderRadius: 17,
+    backgroundColor: "#EDE9FE",
+  },
+
+  featureIconText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  featureText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+  },
+
+  primaryButton: {
+    minHeight: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 30,
     borderRadius: 12,
     backgroundColor: "#6D28D9",
   },
+
   primaryButtonText: {
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: 16,
+    fontWeight: "800",
     color: "#FFFFFF",
   },
+
   secondaryButton: {
-    width: "100%",
-    maxWidth: 340,
+    minHeight: 56,
     alignItems: "center",
-    paddingVertical: 15,
-    marginTop: 12,
+    justifyContent: "center",
+    marginTop: 13,
     borderWidth: 1,
     borderColor: "#6D28D9",
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
   },
+
   secondaryButtonText: {
     fontSize: 16,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  changeLanguageButton: {
+    alignItems: "center",
+    paddingVertical: 15,
+    marginTop: 6,
+  },
+
+  changeLanguageText: {
+    fontSize: 14,
     fontWeight: "700",
     color: "#6D28D9",
   },
+
   pressedButton: {
-    opacity: 0.75,
+    opacity: 0.8,
   },
-  version: {
-    position: "absolute",
-    bottom: 25,
-    fontSize: 12,
+
+  footerText: {
+    marginTop: 18,
+    fontSize: 11,
+    textAlign: "center",
     color: "#9CA3AF",
   },
 });

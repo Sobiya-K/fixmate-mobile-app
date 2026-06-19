@@ -1,18 +1,21 @@
 import { router } from "expo-router";
 import { useState } from "react";
+
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
+import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/lib/supabase";
 
 type UserRole = "customer" | "worker";
@@ -29,42 +32,54 @@ const workerCategories = [
 ];
 
 export default function RegisterScreen() {
-  const [role, setRole] = useState<UserRole>("customer");
+  const { languageName, t } = useLanguage();
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [town, setTown] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [category, setCategory] = useState("Electrician");
-  const [description, setDescription] = useState("");
-  const [experienceYears, setExperienceYears] = useState("");
-  const [basePrice, setBasePrice] = useState("");
+  const [role, setRole] =
+    useState<UserRole>("customer");
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [category, setCategory] =
+    useState("Electrician");
+
+  const [isLoading, setIsLoading] =
+    useState(false);
 
   const validateForm = () => {
-    if (
-      !fullName.trim() ||
-      !phone.trim() ||
-      !town.trim() ||
-      !email.trim() ||
-      !password.trim() ||
-      !confirmPassword.trim()
-    ) {
+    if (fullName.trim().length < 2) {
       Alert.alert(
-        "Missing information",
-        "Please complete all required fields."
+        t("register.fullName"),
+        "Please enter your full name."
       );
 
       return false;
     }
 
-    if (!email.includes("@")) {
+    if (phone.trim().length < 9) {
       Alert.alert(
-        "Invalid email",
+        t("register.phone"),
+        "Please enter a valid phone number."
+      );
+
+      return false;
+    }
+
+    if (town.trim().length < 2) {
+      Alert.alert(
+        t("register.town"),
+        "Please enter your town."
+      );
+
+      return false;
+    }
+
+    if (!email.trim().includes("@")) {
+      Alert.alert(
+        t("register.email"),
         "Please enter a valid email address."
       );
 
@@ -73,60 +88,20 @@ export default function RegisterScreen() {
 
     if (password.length < 6) {
       Alert.alert(
-        "Weak password",
+        t("register.password"),
         "Password must contain at least 6 characters."
       );
 
       return false;
     }
 
-    if (password !== confirmPassword) {
+    if (role === "worker" && !category) {
       Alert.alert(
-        "Passwords do not match",
-        "Please enter the same password twice."
+        t("register.category"),
+        "Please select your service category."
       );
 
       return false;
-    }
-
-    if (role === "worker") {
-      const experience = Number(experienceYears);
-      const price = Number(basePrice);
-
-      if (!description.trim()) {
-        Alert.alert(
-          "Missing description",
-          "Please provide a short description of your services."
-        );
-
-        return false;
-      }
-
-      if (
-        experienceYears.trim() === "" ||
-        Number.isNaN(experience) ||
-        experience < 0
-      ) {
-        Alert.alert(
-          "Invalid experience",
-          "Enter valid years of experience."
-        );
-
-        return false;
-      }
-
-      if (
-        basePrice.trim() === "" ||
-        Number.isNaN(price) ||
-        price < 0
-      ) {
-        Alert.alert(
-          "Invalid price",
-          "Enter a valid starting price."
-        );
-
-        return false;
-      }
     }
 
     return true;
@@ -140,76 +115,73 @@ export default function RegisterScreen() {
     setIsLoading(true);
 
     try {
-      const metadata =
-        role === "worker"
-          ? {
-              full_name: fullName.trim(),
-              phone: phone.trim(),
-              town: town.trim(),
-              role,
-              category,
-              description: description.trim(),
-              experience_years: experienceYears.trim(),
-              base_price: basePrice.trim(),
-            }
-          : {
-              full_name: fullName.trim(),
-              phone: phone.trim(),
-              town: town.trim(),
-              role,
-            };
+      const cleanedEmail =
+        email.trim().toLowerCase();
 
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+      const {
+        data: signUpData,
+        error: signUpError,
+      } = await supabase.auth.signUp({
+        email: cleanedEmail,
         password,
+
         options: {
-          data: metadata,
+          data: {
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            town: town.trim(),
+            role,
+            category:
+              role === "worker"
+                ? category
+                : null,
+          },
         },
       });
 
-      if (error) {
-        Alert.alert("Registration failed", error.message);
-        return;
-      }
-
-      if (!data.session) {
+      if (signUpError) {
         Alert.alert(
-          "Check your email",
-          "Your account was created. Confirm your email and then log in.",
-          [
-            {
-              text: "Go to Login",
-              onPress: () => router.replace("/login"),
-            },
-          ]
+          "Registration failed",
+          signUpError.message
         );
 
         return;
       }
 
+      if (!signUpData.user) {
+        Alert.alert(
+          "Registration failed",
+          "The account could not be created."
+        );
+
+        return;
+      }
+
+      if (signUpData.session) {
+        await supabase.auth.signOut();
+      }
+
       Alert.alert(
         "Account created",
-        role === "customer"
-          ? "Your customer account was created successfully."
-          : "Your worker account was created successfully.",
+        "Your FixMate account was created successfully.",
         [
           {
-            text: "Continue",
+            text: t("login.button"),
+
             onPress: () =>
-              router.replace(
-                role === "customer"
-                  ? "/customer-dashboard"
-                  : "/worker-dashboard"
-              ),
+              router.replace("/login"),
           },
         ]
       );
     } catch (error) {
-      console.error("Registration error:", error);
+      console.error(
+        "Unexpected registration error:",
+        error
+      );
 
       Alert.alert(
-        "Unexpected error",
-        "Something went wrong. Please try again."
+        "Registration failed",
+        "Something went wrong while creating the account."
       );
     } finally {
       setIsLoading(false);
@@ -217,314 +189,336 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
+        }
       >
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back</Text>
-        </Pressable>
-
-        <Text style={styles.title}>Create Account</Text>
-
-        <Text style={styles.subtitle}>
-          Join FixMate as a customer or skilled worker
-        </Text>
-
-        <Text style={styles.label}>Select account type</Text>
-
-        <View style={styles.roleRow}>
-          <Pressable
-            style={[
-              styles.roleButton,
-              role === "customer" && styles.selectedRoleButton,
-            ]}
-            onPress={() => setRole("customer")}
-          >
-            <Text
-              style={[
-                styles.roleButtonText,
-                role === "customer" &&
-                  styles.selectedRoleButtonText,
-              ]}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.topRow}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => router.back()}
+              disabled={isLoading}
             >
-              👤 Customer
-            </Text>
-          </Pressable>
+              <Text style={styles.backText}>
+                ← {t("common.back")}
+              </Text>
+            </Pressable>
 
-          <Pressable
-            style={[
-              styles.roleButton,
-              role === "worker" && styles.selectedRoleButton,
-            ]}
-            onPress={() => setRole("worker")}
-          >
-            <Text
-              style={[
-                styles.roleButtonText,
-                role === "worker" &&
-                  styles.selectedRoleButtonText,
-              ]}
+            <Pressable
+              style={styles.languageButton}
+              onPress={() =>
+                router.push("/language")
+              }
+              disabled={isLoading}
             >
-              🛠️ Worker
+              <Text style={styles.languageText}>
+                🌐 {languageName}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoText}>
+              👤
             </Text>
-          </Pressable>
-        </View>
+          </View>
 
-        <Text style={styles.label}>Full name *</Text>
-        <TextInput
-          style={styles.input}
-          value={fullName}
-          onChangeText={setFullName}
-          placeholder="Enter your full name"
-          autoCapitalize="words"
-        />
+          <Text style={styles.appName}>
+            {t("common.appName")}
+          </Text>
 
-        <Text style={styles.label}>Phone number *</Text>
-        <TextInput
-          style={styles.input}
-          value={phone}
-          onChangeText={setPhone}
-          placeholder="Enter your phone number"
-          keyboardType="phone-pad"
-        />
+          <Text style={styles.title}>
+            {t("register.title")}
+          </Text>
 
-        <Text style={styles.label}>Town *</Text>
-        <TextInput
-          style={styles.input}
-          value={town}
-          onChangeText={setTown}
-          placeholder="Example: Kelaniya"
-          autoCapitalize="words"
-        />
+          <Text style={styles.subtitle}>
+            {t("register.subtitle")}
+          </Text>
 
-        {role === "worker" && (
-          <>
-            <Text style={styles.sectionTitle}>
-              Worker Information
+          <View style={styles.formCard}>
+            <Text style={styles.label}>
+              {t("register.role")}
             </Text>
 
-            <Text style={styles.label}>Service category *</Text>
+            <View style={styles.roleRow}>
+              <Pressable
+                style={[
+                  styles.roleButton,
 
-            <View style={styles.categoryContainer}>
-              {workerCategories.map((item) => (
-                <Pressable
-                  key={item}
+                  role === "customer" &&
+                    styles.selectedRoleButton,
+                ]}
+                onPress={() =>
+                  setRole("customer")
+                }
+                disabled={isLoading}
+              >
+                <Text style={styles.roleIcon}>
+                  👤
+                </Text>
+
+                <Text
                   style={[
-                    styles.categoryButton,
-                    category === item &&
-                      styles.selectedCategoryButton,
+                    styles.roleButtonText,
+
+                    role === "customer" &&
+                      styles.selectedRoleButtonText,
                   ]}
-                  onPress={() => setCategory(item)}
                 >
-                  <Text
-                    style={[
-                      styles.categoryButtonText,
-                      category === item &&
-                        styles.selectedCategoryText,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                </Pressable>
-              ))}
+                  {t("register.customer")}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.roleButton,
+
+                  role === "worker" &&
+                    styles.selectedRoleButton,
+                ]}
+                onPress={() =>
+                  setRole("worker")
+                }
+                disabled={isLoading}
+              >
+                <Text style={styles.roleIcon}>
+                  🛠️
+                </Text>
+
+                <Text
+                  style={[
+                    styles.roleButtonText,
+
+                    role === "worker" &&
+                      styles.selectedRoleButtonText,
+                  ]}
+                >
+                  {t("register.worker")}
+                </Text>
+              </Pressable>
             </View>
 
             <Text style={styles.label}>
-              Service description *
+              {t("register.fullName")}
             </Text>
+
             <TextInput
-              style={[styles.input, styles.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Describe your skills and services"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
+              style={styles.input}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder={t(
+                "register.fullName"
+              )}
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="words"
+              editable={!isLoading}
             />
 
             <Text style={styles.label}>
-              Years of experience *
+              {t("register.phone")}
             </Text>
+
             <TextInput
               style={styles.input}
-              value={experienceYears}
-              onChangeText={setExperienceYears}
-              placeholder="Example: 3"
-              keyboardType="number-pad"
+              value={phone}
+              onChangeText={setPhone}
+              placeholder={t("register.phone")}
+              placeholderTextColor="#9CA3AF"
+              keyboardType="phone-pad"
+              editable={!isLoading}
             />
 
             <Text style={styles.label}>
-              Starting service price (LKR) *
+              {t("register.town")}
             </Text>
+
             <TextInput
               style={styles.input}
-              value={basePrice}
-              onChangeText={setBasePrice}
-              placeholder="Example: 2500"
-              keyboardType="decimal-pad"
+              value={town}
+              onChangeText={setTown}
+              placeholder={t("register.town")}
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="words"
+              editable={!isLoading}
             />
-          </>
-        )}
 
-        <Text style={styles.sectionTitle}>Login Information</Text>
-
-        <Text style={styles.label}>Email *</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          placeholder="Enter your email"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <Text style={styles.label}>Password *</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Minimum 6 characters"
-          secureTextEntry
-          autoCapitalize="none"
-        />
-
-        <Text style={styles.label}>Confirm password *</Text>
-        <TextInput
-          style={styles.input}
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="Enter your password again"
-          secureTextEntry
-          autoCapitalize="none"
-        />
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.registerButton,
-            pressed && styles.pressedButton,
-            isLoading && styles.disabledButton,
-          ]}
-          onPress={handleRegister}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.registerButtonText}>
-              Create {role === "customer" ? "Customer" : "Worker"}{" "}
-              Account
+            <Text style={styles.label}>
+              {t("register.email")}
             </Text>
-          )}
-        </Pressable>
 
-        <Pressable
-          style={styles.loginLink}
-          onPress={() => router.replace("/login")}
-        >
-          <Text style={styles.loginLinkText}>
-            Already registered?{" "}
-            <Text style={styles.loginLinkStrong}>Log in</Text>
-          </Text>
-        </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder={t("register.email")}
+              placeholderTextColor="#9CA3AF"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+            />
+
+            <Text style={styles.label}>
+              {t("register.password")}
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder={t(
+                "register.password"
+              )}
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!isLoading}
+            />
+
+            {role === "worker" && (
+              <>
+                <Text style={styles.label}>
+                  {t("register.category")}
+                </Text>
+
+                <View
+                  style={styles.categoryContainer}
+                >
+                  {workerCategories.map(
+                    (workerCategory) => {
+                      const isSelected =
+                        category ===
+                        workerCategory;
+
+                      return (
+                        <Pressable
+                          key={workerCategory}
+                          style={[
+                            styles.categoryButton,
+
+                            isSelected &&
+                              styles.selectedCategoryButton,
+                          ]}
+                          onPress={() =>
+                            setCategory(
+                              workerCategory
+                            )
+                          }
+                          disabled={isLoading}
+                        >
+                          <Text
+                            style={[
+                              styles.categoryText,
+
+                              isSelected &&
+                                styles.selectedCategoryText,
+                            ]}
+                          >
+                            {workerCategory}
+                          </Text>
+                        </Pressable>
+                      );
+                    }
+                  )}
+                </View>
+              </>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.registerButton,
+
+                pressed &&
+                  styles.pressedButton,
+
+                isLoading &&
+                  styles.disabledButton,
+              ]}
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator
+                  color="#FFFFFF"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.registerButtonText
+                  }
+                >
+                  {t("register.button")}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+
+          <View style={styles.loginRow}>
+            <Text style={styles.loginQuestion}>
+              {t("register.haveAccount")}
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                router.replace("/login")
+              }
+              disabled={isLoading}
+            >
+              <Text style={styles.loginLink}>
+                {t("register.login")}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  safeArea: {
     flex: 1,
     backgroundColor: "#F7F4FF",
   },
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 55,
-    paddingBottom: 50,
-  },
-  backText: {
-    marginBottom: 22,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6D28D9",
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#1F2937",
-  },
-  subtitle: {
-    marginTop: 8,
-    marginBottom: 26,
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6B7280",
-  },
-  sectionTitle: {
-    marginTop: 25,
-    marginBottom: 6,
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#6D28D9",
-  },
-  label: {
-    marginTop: 15,
-    marginBottom: 7,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#374151",
-  },
-  input: {
-    width: "100%",
-    minHeight: 51,
-    paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 11,
-    backgroundColor: "#FFFFFF",
-    fontSize: 15,
-    color: "#111827",
-  },
-  textArea: {
-    minHeight: 105,
-    paddingTop: 14,
-  },
-  roleRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  roleButton: {
+
+  keyboardView: {
     flex: 1,
+  },
+
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 45,
+  },
+
+  topRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "#C4B5FD",
-    borderRadius: 11,
-    backgroundColor: "#FFFFFF",
+    justifyContent: "space-between",
   },
-  selectedRoleButton: {
-    borderColor: "#6D28D9",
-    backgroundColor: "#6D28D9",
+
+  backButton: {
+    paddingVertical: 10,
   },
-  roleButtonText: {
+
+  backText: {
     fontSize: 14,
     fontWeight: "700",
     color: "#6D28D9",
   },
-  selectedRoleButtonText: {
-    color: "#FFFFFF",
-  },
-  categoryContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  categoryButton: {
+
+  languageButton: {
     paddingHorizontal: 13,
     paddingVertical: 9,
     borderWidth: 1,
@@ -532,46 +526,194 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
   },
-  selectedCategoryButton: {
-    borderColor: "#6D28D9",
-    backgroundColor: "#EDE9FE",
-  },
-  categoryButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  selectedCategoryText: {
+
+  languageText: {
+    fontSize: 12,
+    fontWeight: "800",
     color: "#6D28D9",
   },
-  registerButton: {
-    minHeight: 54,
+
+  logoCircle: {
+    width: 74,
+    height: 74,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 30,
+    alignSelf: "center",
+    marginTop: 25,
+    borderRadius: 37,
+    backgroundColor: "#EDE9FE",
+  },
+
+  logoText: {
+    fontSize: 37,
+  },
+
+  appName: {
+    marginTop: 11,
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+    color: "#6D28D9",
+  },
+
+  title: {
+    marginTop: 17,
+    fontSize: 29,
+    fontWeight: "800",
+    textAlign: "center",
+    color: "#1F2937",
+  },
+
+  subtitle: {
+    maxWidth: 330,
+    alignSelf: "center",
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    color: "#6B7280",
+  },
+
+  formCard: {
+    padding: 20,
+    marginTop: 25,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+
+  label: {
+    marginTop: 8,
+    marginBottom: 7,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+  },
+
+  roleRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 9,
+  },
+
+  roleButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 85,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
     borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+
+  selectedRoleButton: {
+    borderWidth: 2,
+    borderColor: "#6D28D9",
+    backgroundColor: "#F5F3FF",
+  },
+
+  roleIcon: {
+    fontSize: 25,
+  },
+
+  roleButtonText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#6B7280",
+  },
+
+  selectedRoleButtonText: {
+    color: "#6D28D9",
+  },
+
+  input: {
+    minHeight: 52,
+    paddingHorizontal: 15,
+    marginBottom: 11,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+    fontSize: 15,
+    color: "#111827",
+  },
+
+  categoryContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 2,
+    marginBottom: 7,
+  },
+
+  categoryButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    marginRight: 7,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+  },
+
+  selectedCategoryButton: {
+    borderColor: "#6D28D9",
     backgroundColor: "#6D28D9",
   },
+
+  categoryText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+  },
+
+  selectedCategoryText: {
+    color: "#FFFFFF",
+  },
+
+  registerButton: {
+    minHeight: 55,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+    borderRadius: 11,
+    backgroundColor: "#6D28D9",
+  },
+
   registerButtonText: {
     fontSize: 16,
     fontWeight: "800",
     color: "#FFFFFF",
   },
+
   pressedButton: {
-    opacity: 0.75,
+    opacity: 0.8,
   },
+
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
-  loginLink: {
+
+  loginRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 20,
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginTop: 22,
   },
-  loginLinkText: {
+
+  loginQuestion: {
+    marginRight: 6,
     fontSize: 14,
     color: "#6B7280",
   },
-  loginLinkStrong: {
+
+  loginLink: {
+    fontSize: 14,
     fontWeight: "800",
     color: "#6D28D9",
   },

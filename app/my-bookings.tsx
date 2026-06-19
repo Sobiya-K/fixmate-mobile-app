@@ -1,9 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import {
-    useCallback,
-    useMemo,
-    useState,
-} from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -46,9 +42,14 @@ type WorkerSummary = {
   category: string;
 };
 
+type ReviewReference = {
+  booking_id: string;
+};
+
 type CustomerBooking = RawBooking & {
   worker_name: string;
   worker_town: string;
+  has_review: boolean;
 };
 
 const getStatusLabel = (status: BookingStatus) => {
@@ -93,9 +94,9 @@ const formatBookingDate = (dateValue: string) => {
 };
 
 export default function MyBookingsScreen() {
-  const [bookings, setBookings] = useState<
-    CustomerBooking[]
-  >([]);
+  const [bookings, setBookings] = useState<CustomerBooking[]>(
+    []
+  );
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -118,23 +119,26 @@ export default function MyBookingsScreen() {
       try {
         const {
           data: { user },
+          error: userError,
         } = await supabase.auth.getUser();
 
-        if (!user) {
+        if (userError || !user) {
           router.replace("/login");
           return;
         }
 
-        const { data: profile, error: profileError } =
-          await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
+        const {
+          data: profileData,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
 
-        if (profileError || !profile) {
+        if (profileError || !profileData) {
           console.error(
-            "Customer profile error:",
+            "Customer profile loading error:",
             profileError
           );
 
@@ -145,36 +149,38 @@ export default function MyBookingsScreen() {
           return;
         }
 
-        if (profile.role !== "customer") {
+        if (profileData.role !== "customer") {
           router.replace("/worker-dashboard");
           return;
         }
 
-        const { data: bookingData, error: bookingError } =
-          await supabase
-            .from("bookings")
-            .select(
-              `
-                id,
-                customer_id,
-                worker_id,
-                service_category,
-                service_description,
-                service_address,
-                preferred_date,
-                estimated_price,
-                status,
-                created_at
-              `
-            )
-            .eq("customer_id", user.id)
-            .order("created_at", {
-              ascending: false,
-            });
+        const {
+          data: bookingData,
+          error: bookingError,
+        } = await supabase
+          .from("bookings")
+          .select(
+            `
+              id,
+              customer_id,
+              worker_id,
+              service_category,
+              service_description,
+              service_address,
+              preferred_date,
+              estimated_price,
+              status,
+              created_at
+            `
+          )
+          .eq("customer_id", user.id)
+          .order("created_at", {
+            ascending: false,
+          });
 
         if (bookingError) {
           console.error(
-            "Customer bookings error:",
+            "Customer bookings loading error:",
             bookingError
           );
 
@@ -185,8 +191,19 @@ export default function MyBookingsScreen() {
           return;
         }
 
-        const rawBookings =
-          (bookingData ?? []) as RawBooking[];
+        const rawBookings = (
+          bookingData ?? []
+        ).map((booking) => ({
+          ...booking,
+
+          status: String(booking.status)
+            .trim()
+            .toLowerCase() as BookingStatus,
+        })) as RawBooking[];
+
+        const bookingIds = rawBookings.map(
+          (booking) => booking.id
+        );
 
         const workerIds = [
           ...new Set(
@@ -195,6 +212,34 @@ export default function MyBookingsScreen() {
             )
           ),
         ];
+
+        const reviewedBookingIds =
+          new Set<string>();
+
+        if (bookingIds.length > 0) {
+          const {
+            data: reviewData,
+            error: reviewError,
+          } = await supabase
+            .from("reviews")
+            .select("booking_id")
+            .in("booking_id", bookingIds);
+
+          if (reviewError) {
+            console.error(
+              "Review reference loading error:",
+              reviewError
+            );
+          } else {
+            (
+              (reviewData ?? []) as ReviewReference[]
+            ).forEach((review) => {
+              reviewedBookingIds.add(
+                review.booking_id
+              );
+            });
+          }
+        }
 
         const workerMap = new Map<
           string,
@@ -214,7 +259,7 @@ export default function MyBookingsScreen() {
 
           if (workerError) {
             console.error(
-              "Booking worker details error:",
+              "Worker details loading error:",
               workerError
             );
           } else {
@@ -234,12 +279,25 @@ export default function MyBookingsScreen() {
 
             return {
               ...booking,
+
               worker_name:
-                worker?.full_name || "FixMate Worker",
+                worker?.full_name ||
+                "FixMate Worker",
+
               worker_town:
                 worker?.town || "Not provided",
+
+              has_review:
+                reviewedBookingIds.has(
+                  booking.id
+                ),
             };
           });
+
+        console.log(
+          "Customer prepared bookings:",
+          preparedBookings
+        );
 
         setBookings(preparedBookings);
       } catch (error) {
@@ -267,7 +325,8 @@ export default function MyBookingsScreen() {
 
   const summary = useMemo(() => {
     const pending = bookings.filter(
-      (booking) => booking.status === "pending"
+      (booking) =>
+        booking.status === "pending"
     ).length;
 
     const active = bookings.filter(
@@ -277,7 +336,8 @@ export default function MyBookingsScreen() {
     ).length;
 
     const completed = bookings.filter(
-      (booking) => booking.status === "completed"
+      (booking) =>
+        booking.status === "completed"
     ).length;
 
     return {
@@ -297,7 +357,7 @@ export default function MyBookingsScreen() {
     setCancellingBookingId(booking.id);
 
     try {
-      const { error } = await supabase.rpc(
+      const { data, error } = await supabase.rpc(
         "change_booking_status",
         {
           p_booking_id: booking.id,
@@ -305,12 +365,15 @@ export default function MyBookingsScreen() {
         }
       );
 
-      if (error) {
-        console.error(
-          "Booking cancellation error:",
-          error
-        );
+      console.log(
+        "Booking cancellation response:",
+        {
+          data,
+          error,
+        }
+      );
 
+      if (error) {
         Alert.alert(
           "Cancellation failed",
           error.message
@@ -320,13 +383,14 @@ export default function MyBookingsScreen() {
       }
 
       setBookings((currentBookings) =>
-        currentBookings.map((currentBooking) =>
-          currentBooking.id === booking.id
-            ? {
-                ...currentBooking,
-                status: "cancelled",
-              }
-            : currentBooking
+        currentBookings.map(
+          (currentBooking) =>
+            currentBooking.id === booking.id
+              ? {
+                  ...currentBooking,
+                  status: "cancelled",
+                }
+              : currentBooking
         )
       );
 
@@ -363,10 +427,22 @@ export default function MyBookingsScreen() {
         {
           text: "Cancel Booking",
           style: "destructive",
-          onPress: () => cancelBooking(booking),
+          onPress: () =>
+            cancelBooking(booking),
         },
       ]
     );
+  };
+
+  const openReviewScreen = (
+    booking: CustomerBooking
+  ) => {
+    router.push({
+      pathname: "/review/[bookingId]",
+      params: {
+        bookingId: booking.id,
+      },
+    });
   };
 
   if (isLoading) {
@@ -402,7 +478,9 @@ export default function MyBookingsScreen() {
         <Pressable
           style={styles.backButton}
           onPress={() =>
-            router.replace("/customer-dashboard")
+            router.replace(
+              "/customer-dashboard"
+            )
           }
         >
           <Text style={styles.backText}>
@@ -410,11 +488,13 @@ export default function MyBookingsScreen() {
           </Text>
         </Pressable>
 
-        <Text style={styles.title}>My Bookings</Text>
+        <Text style={styles.title}>
+          My Bookings
+        </Text>
 
         <Text style={styles.subtitle}>
-          Track your service requests and their current
-          progress.
+          Track your service requests and leave feedback
+          after completed services.
         </Text>
 
         <View style={styles.summaryRow}>
@@ -465,7 +545,9 @@ export default function MyBookingsScreen() {
               {errorMessage}
             </Text>
 
-            <Pressable onPress={handleRefresh}>
+            <Pressable
+              onPress={handleRefresh}
+            >
               <Text style={styles.retryText}>
                 Try again
               </Text>
@@ -476,15 +558,17 @@ export default function MyBookingsScreen() {
         {bookings.length === 0 &&
         errorMessage === "" ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>📋</Text>
+            <Text style={styles.emptyIcon}>
+              📋
+            </Text>
 
             <Text style={styles.emptyTitle}>
               No bookings yet
             </Text>
 
             <Text style={styles.emptyText}>
-              Select an available skilled worker and send
-              your first service request.
+              Select an available worker and send your
+              first service request.
             </Text>
 
             <Pressable
@@ -495,7 +579,11 @@ export default function MyBookingsScreen() {
                 )
               }
             >
-              <Text style={styles.findWorkerButtonText}>
+              <Text
+                style={
+                  styles.findWorkerButtonText
+                }
+              >
                 Find a Worker
               </Text>
             </Pressable>
@@ -503,24 +591,43 @@ export default function MyBookingsScreen() {
         ) : (
           bookings.map((booking) => {
             const isCancelling =
-              cancellingBookingId === booking.id;
+              cancellingBookingId ===
+              booking.id;
 
             return (
               <View
                 key={booking.id}
                 style={styles.bookingCard}
               >
-                <View style={styles.bookingTopRow}>
-                  <View style={styles.workerInformation}>
-                    <Text style={styles.workerName}>
+                <View
+                  style={
+                    styles.bookingTopRow
+                  }
+                >
+                  <View
+                    style={
+                      styles.workerInformation
+                    }
+                  >
+                    <Text
+                      style={styles.workerName}
+                    >
                       {booking.worker_name}
                     </Text>
 
-                    <Text style={styles.workerCategory}>
-                      {booking.service_category}
+                    <Text
+                      style={
+                        styles.workerCategory
+                      }
+                    >
+                      {
+                        booking.service_category
+                      }
                     </Text>
 
-                    <Text style={styles.workerTown}>
+                    <Text
+                      style={styles.workerTown}
+                    >
                       📍 {booking.worker_town}
                     </Text>
                   </View>
@@ -528,78 +635,120 @@ export default function MyBookingsScreen() {
                   <View
                     style={[
                       styles.statusBadge,
-                      booking.status === "pending" &&
+
+                      booking.status ===
+                        "pending" &&
                         styles.pendingBadge,
-                      booking.status === "accepted" &&
+
+                      booking.status ===
+                        "accepted" &&
                         styles.acceptedBadge,
+
                       booking.status ===
                         "in_progress" &&
                         styles.progressBadge,
-                      booking.status === "completed" &&
+
+                      booking.status ===
+                        "completed" &&
                         styles.completedBadge,
-                      booking.status === "rejected" &&
+
+                      booking.status ===
+                        "rejected" &&
                         styles.rejectedBadge,
-                      booking.status === "cancelled" &&
+
+                      booking.status ===
+                        "cancelled" &&
                         styles.cancelledBadge,
                     ]}
                   >
                     <Text
                       style={[
                         styles.statusText,
-                        booking.status === "pending" &&
+
+                        booking.status ===
+                          "pending" &&
                           styles.pendingText,
-                        booking.status === "accepted" &&
+
+                        booking.status ===
+                          "accepted" &&
                           styles.acceptedText,
+
                         booking.status ===
                           "in_progress" &&
                           styles.progressText,
-                        booking.status === "completed" &&
+
+                        booking.status ===
+                          "completed" &&
                           styles.completedText,
-                        booking.status === "rejected" &&
+
+                        booking.status ===
+                          "rejected" &&
                           styles.rejectedText,
-                        booking.status === "cancelled" &&
+
+                        booking.status ===
+                          "cancelled" &&
                           styles.cancelledText,
                       ]}
                     >
-                      {getStatusLabel(booking.status)}
+                      {getStatusLabel(
+                        booking.status
+                      )}
                     </Text>
                   </View>
                 </View>
 
                 <View style={styles.divider} />
 
-                <Text style={styles.detailLabel}>
+                <Text
+                  style={styles.detailLabel}
+                >
                   Requested service
                 </Text>
 
-                <Text style={styles.description}>
-                  {booking.service_description}
+                <Text
+                  style={styles.description}
+                >
+                  {
+                    booking.service_description
+                  }
                 </Text>
 
-                <Text style={styles.detailLabel}>
+                <Text
+                  style={styles.detailLabel}
+                >
                   Service address
                 </Text>
 
-                <Text style={styles.detailValue}>
+                <Text
+                  style={styles.detailValue}
+                >
                   {booking.service_address}
                 </Text>
 
-                <Text style={styles.detailLabel}>
+                <Text
+                  style={styles.detailLabel}
+                >
                   Preferred date and time
                 </Text>
 
-                <Text style={styles.detailValue}>
+                <Text
+                  style={styles.detailValue}
+                >
                   {formatBookingDate(
                     booking.preferred_date
                   )}
                 </Text>
 
                 <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>
+                  <Text
+                    style={styles.priceLabel}
+                  >
                     Estimated starting price
                   </Text>
 
-                  <Text style={styles.priceValue}>
+                  <Text
+                    style={styles.priceValue}
+                  >
                     LKR{" "}
                     {Number(
                       booking.estimated_price
@@ -607,15 +756,19 @@ export default function MyBookingsScreen() {
                   </Text>
                 </View>
 
-                {booking.status === "pending" && (
+                {booking.status ===
+                  "pending" && (
                   <Pressable
                     style={[
                       styles.cancelButton,
+
                       isCancelling &&
                         styles.disabledButton,
                     ]}
                     onPress={() =>
-                      confirmCancellation(booking)
+                      confirmCancellation(
+                        booking
+                      )
                     }
                     disabled={isCancelling}
                   >
@@ -626,7 +779,9 @@ export default function MyBookingsScreen() {
                       />
                     ) : (
                       <Text
-                        style={styles.cancelButtonText}
+                        style={
+                          styles.cancelButtonText
+                        }
                       >
                         Cancel Booking
                       </Text>
@@ -634,48 +789,129 @@ export default function MyBookingsScreen() {
                   </Pressable>
                 )}
 
-                {booking.status === "accepted" && (
-                  <View style={styles.informationCard}>
+                {booking.status ===
+                  "accepted" && (
+                  <View
+                    style={
+                      styles.informationCard
+                    }
+                  >
                     <Text
-                      style={styles.informationText}
+                      style={
+                        styles.informationText
+                      }
                     >
-                      The worker accepted your request and
-                      will attend at the scheduled time.
+                      The worker accepted your
+                      booking request.
                     </Text>
                   </View>
                 )}
 
-                {booking.status === "in_progress" && (
-                  <View style={styles.informationCard}>
+                {booking.status ===
+                  "in_progress" && (
+                  <View
+                    style={
+                      styles.informationCard
+                    }
+                  >
                     <Text
-                      style={styles.informationText}
+                      style={
+                        styles.informationText
+                      }
                     >
-                      The worker has started this job.
+                      The worker has started this
+                      job.
                     </Text>
                   </View>
                 )}
 
-                {booking.status === "completed" && (
-                  <View style={styles.successCard}>
-                    <Text style={styles.successText}>
-                      This service has been completed.
+                {booking.status ===
+                  "completed" && (
+                  <>
+                    <View
+                      style={
+                        styles.successCard
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.successText
+                        }
+                      >
+                        This service has been
+                        completed.
+                      </Text>
+                    </View>
+
+                    {booking.has_review ? (
+                      <View
+                        style={
+                          styles.reviewedCard
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.reviewedText
+                          }
+                        >
+                          ✓ Review submitted
+                        </Text>
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={
+                          styles.reviewButton
+                        }
+                        onPress={() =>
+                          openReviewScreen(
+                            booking
+                          )
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.reviewButtonText
+                          }
+                        >
+                          ⭐ Leave a Review
+                        </Text>
+                      </Pressable>
+                    )}
+                  </>
+                )}
+
+                {booking.status ===
+                  "rejected" && (
+                  <View
+                    style={
+                      styles.rejectedCard
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.rejectedCardText
+                      }
+                    >
+                      The worker could not accept
+                      this booking request.
                     </Text>
                   </View>
                 )}
 
-                {booking.status === "rejected" && (
-                  <View style={styles.rejectedCard}>
-                    <Text style={styles.rejectedCardText}>
-                      The worker could not accept this
+                {booking.status ===
+                  "cancelled" && (
+                  <View
+                    style={
+                      styles.cancelledCard
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.cancelledCardText
+                      }
+                    >
+                      You cancelled this booking
                       request.
-                    </Text>
-                  </View>
-                )}
-
-                {booking.status === "cancelled" && (
-                  <View style={styles.cancelledCard}>
-                    <Text style={styles.cancelledCardText}>
-                      You cancelled this booking request.
                     </Text>
                   </View>
                 )}
@@ -693,47 +929,56 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7F4FF",
   },
+
   content: {
     paddingHorizontal: 20,
     paddingTop: 22,
     paddingBottom: 50,
   },
+
   centerContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
+
   loadingText: {
     marginTop: 14,
     fontSize: 14,
     color: "#6B7280",
   },
+
   backButton: {
     alignSelf: "flex-start",
     paddingVertical: 10,
   },
+
   backText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#6D28D9",
   },
+
   title: {
     marginTop: 10,
     fontSize: 31,
     fontWeight: "800",
     color: "#1F2937",
   },
+
   subtitle: {
     marginTop: 7,
     fontSize: 14,
     lineHeight: 21,
     color: "#6B7280",
   },
+
   summaryRow: {
     flexDirection: "row",
     gap: 9,
     marginTop: 22,
   },
+
   summaryCard: {
     flex: 1,
     alignItems: "center",
@@ -743,17 +988,20 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     backgroundColor: "#FFFFFF",
   },
+
   summaryNumber: {
     fontSize: 23,
     fontWeight: "800",
     color: "#6D28D9",
   },
+
   summaryLabel: {
     marginTop: 4,
     fontSize: 12,
     fontWeight: "600",
     color: "#6B7280",
   },
+
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -761,15 +1009,18 @@ const styles = StyleSheet.create({
     marginTop: 27,
     marginBottom: 12,
   },
+
   sectionTitle: {
     fontSize: 19,
     fontWeight: "800",
     color: "#1F2937",
   },
+
   bookingCount: {
     fontSize: 13,
     color: "#6B7280",
   },
+
   bookingCard: {
     padding: 18,
     marginBottom: 15,
@@ -778,98 +1029,122 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#FFFFFF",
   },
+
   bookingTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
   },
+
   workerInformation: {
     flex: 1,
     paddingRight: 8,
   },
+
   workerName: {
     fontSize: 17,
     fontWeight: "800",
     color: "#1F2937",
   },
+
   workerCategory: {
     marginTop: 3,
     fontSize: 14,
     fontWeight: "700",
     color: "#6D28D9",
   },
+
   workerTown: {
     marginTop: 4,
     fontSize: 12,
     color: "#6B7280",
   },
+
   statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 15,
   },
+
   statusText: {
     fontSize: 11,
     fontWeight: "800",
   },
+
   pendingBadge: {
     backgroundColor: "#FEF3C7",
   },
+
   pendingText: {
     color: "#92400E",
   },
+
   acceptedBadge: {
     backgroundColor: "#DBEAFE",
   },
+
   acceptedText: {
     color: "#1D4ED8",
   },
+
   progressBadge: {
     backgroundColor: "#EDE9FE",
   },
+
   progressText: {
     color: "#6D28D9",
   },
+
   completedBadge: {
     backgroundColor: "#D1FAE5",
   },
+
   completedText: {
     color: "#047857",
   },
+
   rejectedBadge: {
     backgroundColor: "#FEE2E2",
   },
+
   rejectedText: {
     color: "#B91C1C",
   },
+
   cancelledBadge: {
     backgroundColor: "#E5E7EB",
   },
+
   cancelledText: {
     color: "#4B5563",
   },
+
   divider: {
     height: 1,
     marginVertical: 14,
     backgroundColor: "#E5E7EB",
   },
+
   detailLabel: {
     marginTop: 11,
     fontSize: 12,
     fontWeight: "700",
     color: "#6B7280",
   },
+
   description: {
     marginTop: 4,
     fontSize: 14,
     lineHeight: 21,
     color: "#374151",
   },
+
   detailValue: {
     marginTop: 4,
     fontSize: 14,
     lineHeight: 20,
     color: "#1F2937",
   },
+
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -879,16 +1154,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
+
   priceLabel: {
     flex: 1,
     fontSize: 12,
     color: "#6B7280",
   },
+
   priceValue: {
     fontSize: 16,
     fontWeight: "800",
     color: "#047857",
   },
+
   cancelButton: {
     minHeight: 47,
     alignItems: "center",
@@ -899,56 +1177,96 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#FFFFFF",
   },
+
   cancelButtonText: {
     fontSize: 14,
     fontWeight: "800",
     color: "#DC2626",
   },
+
   disabledButton: {
     opacity: 0.55,
   },
+
   informationCard: {
     padding: 13,
     marginTop: 15,
     borderRadius: 10,
     backgroundColor: "#EFF6FF",
   },
+
   informationText: {
     fontSize: 12,
     lineHeight: 18,
     color: "#1E40AF",
   },
+
   successCard: {
     padding: 13,
     marginTop: 15,
     borderRadius: 10,
     backgroundColor: "#ECFDF5",
   },
+
   successText: {
     fontSize: 12,
     fontWeight: "700",
     color: "#047857",
   },
+
+  reviewButton: {
+    minHeight: 49,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    borderRadius: 10,
+    backgroundColor: "#6D28D9",
+  },
+
+  reviewButtonText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+
+  reviewedCard: {
+    alignItems: "center",
+    padding: 13,
+    marginTop: 12,
+    borderRadius: 10,
+    backgroundColor: "#EDE9FE",
+  },
+
+  reviewedText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
   rejectedCard: {
     padding: 13,
     marginTop: 15,
     borderRadius: 10,
     backgroundColor: "#FEF2F2",
   },
+
   rejectedCardText: {
     fontSize: 12,
     color: "#B91C1C",
   },
+
   cancelledCard: {
     padding: 13,
     marginTop: 15,
     borderRadius: 10,
     backgroundColor: "#F3F4F6",
   },
+
   cancelledCardText: {
     fontSize: 12,
     color: "#4B5563",
   },
+
   emptyCard: {
     alignItems: "center",
     paddingVertical: 42,
@@ -958,15 +1276,18 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: "#FFFFFF",
   },
+
   emptyIcon: {
     fontSize: 42,
   },
+
   emptyTitle: {
     marginTop: 13,
     fontSize: 18,
     fontWeight: "800",
     color: "#1F2937",
   },
+
   emptyText: {
     marginTop: 7,
     fontSize: 13,
@@ -974,6 +1295,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#6B7280",
   },
+
   findWorkerButton: {
     paddingHorizontal: 21,
     paddingVertical: 12,
@@ -981,10 +1303,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#6D28D9",
   },
+
   findWorkerButtonText: {
     fontWeight: "800",
     color: "#FFFFFF",
   },
+
   errorCard: {
     padding: 15,
     marginBottom: 14,
@@ -993,10 +1317,12 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: "#FEF2F2",
   },
+
   errorText: {
     fontSize: 13,
     color: "#B91C1C",
   },
+
   retryText: {
     marginTop: 7,
     fontWeight: "800",

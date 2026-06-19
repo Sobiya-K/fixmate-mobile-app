@@ -107,14 +107,16 @@ export default function WorkerDetailsScreen() {
   };
 
   const handleRequestService = () => {
-    if (!worker) {
+    if (!worker || !worker.is_available) {
       return;
     }
-
-    Alert.alert(
-      "Worker selected",
-      `${worker.full_name} has been selected. The booking form will be added in the next stage.`
-    );
+  
+    router.push({
+      pathname: "/book/[workerId]",
+      params: {
+        workerId: worker.id,
+      },
+    });
   };
 
   if (isLoading) {

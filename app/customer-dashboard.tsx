@@ -322,6 +322,26 @@ export default function CustomerDashboard() {
               </Text>
             </View>
 
+            <Pressable
+                style={({ pressed }) => [
+                    styles.myBookingsButton,
+                    pressed && styles.pressedCard,
+                ]}
+                onPress={() => router.push("/my-bookings")}
+                >
+                <View style={styles.myBookingsInformation}>
+                    <Text style={styles.myBookingsTitle}>
+                    📋 My Bookings
+                    </Text>
+
+                    <Text style={styles.myBookingsText}>
+                    Track requests and service status updates
+                    </Text>
+                </View>
+
+                <Text style={styles.myBookingsArrow}>›</Text>
+             </Pressable>
+
             <TextInput
               style={styles.searchInput}
               value={searchText}
@@ -677,6 +697,34 @@ const styles = StyleSheet.create({
   retryText: {
     marginTop: 7,
     fontWeight: "800",
+    color: "#6D28D9",
+  },
+  myBookingsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    marginTop: 13,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+  },
+  myBookingsInformation: {
+    flex: 1,
+  },
+  myBookingsTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+  myBookingsText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  myBookingsArrow: {
+    marginLeft: 10,
+    fontSize: 29,
     color: "#6D28D9",
   },
 });

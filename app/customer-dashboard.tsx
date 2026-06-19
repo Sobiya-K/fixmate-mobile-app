@@ -304,13 +304,27 @@ export default function CustomerDashboard() {
                 </Text>
               </View>
 
-              <Pressable
-                style={styles.logoutButton}
-                onPress={handleLogout}
-              >
-                <Text style={styles.logoutText}>Logout</Text>
-              </Pressable>
-            </View>
+              <View style={styles.headerActions}>
+                    <Pressable
+                        style={styles.profileButton}
+                        onPress={() => router.push("/profile")}
+                    >
+                        <Text style={styles.profileButtonText}>
+                        Profile
+                        </Text>
+                    </Pressable>
+
+                    <Pressable
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                    >
+                        <Text style={styles.logoutText}>
+                        Logout
+                        </Text>
+                    </Pressable>
+                </View>
+
+              </View>
 
             <View style={styles.heroCard}>
               <Text style={styles.heroTitle}>
@@ -725,6 +739,22 @@ const styles = StyleSheet.create({
   myBookingsArrow: {
     marginLeft: 10,
     fontSize: 29,
+    color: "#6D28D9",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  profileButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: "#EDE9FE",
+  },
+  profileButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
     color: "#6D28D9",
   },
 });

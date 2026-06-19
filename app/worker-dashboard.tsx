@@ -1,5 +1,9 @@
-import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import {
+    useCallback,
+    useMemo,
+    useState,
+} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -147,9 +151,6 @@ export default function WorkerDashboard() {
 
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
 
   const summary = useMemo(() => {
     const pending = bookings.filter(
@@ -344,6 +345,12 @@ export default function WorkerDashboard() {
     }
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [])
+  );
+
   const handleRefresh = () => {
     loadDashboard(true);
   };
@@ -493,14 +500,25 @@ export default function WorkerDashboard() {
             </Text>
           </View>
 
-          <Pressable
-            style={styles.logoutButton}
-            onPress={handleLogout}
-          >
-            <Text style={styles.logoutText}>
-              Logout
-            </Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+                <Pressable
+                    style={styles.profileButton}
+                    onPress={() => router.push("/profile")}
+                >
+                    <Text style={styles.profileButtonText}>
+                    Profile
+                    </Text>
+                </Pressable>
+
+                <Pressable
+                    style={styles.logoutButton}
+                    onPress={handleLogout}
+                >
+                    <Text style={styles.logoutText}>
+                    Logout
+                    </Text>
+                </Pressable>
+             </View>
         </View>
 
         <View style={styles.heroCard}>
@@ -1093,6 +1111,22 @@ const styles = StyleSheet.create({
   retryText: {
     marginTop: 7,
     fontWeight: "800",
+    color: "#6D28D9",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  profileButton: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: "#EDE9FE",
+  },
+  profileButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
     color: "#6D28D9",
   },
 });

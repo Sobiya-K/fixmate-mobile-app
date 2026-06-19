@@ -18,6 +18,7 @@ import DateTimePicker, {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     Pressable,
     SafeAreaView,
@@ -48,6 +49,11 @@ import DateTimePicker, {
     average_rating: number | string;
   };
   
+  type IosPickerMode =
+    | "date"
+    | "time"
+    | null;
+  
   type ScreenText = {
     back: string;
     title: string;
@@ -74,6 +80,7 @@ import DateTimePicker, {
     selectTime: string;
     changeDate: string;
     changeTime: string;
+    cancel: string;
     done: string;
     bookingSummary: string;
     worker: string;
@@ -126,7 +133,8 @@ import DateTimePicker, {
       rating: "Rating",
       newWorker: "New worker",
       startingPrice: "Starting price",
-      serviceDescription: "Service description",
+      serviceDescription:
+        "Service description",
       descriptionPlaceholder:
         "Describe the work you need the worker to complete",
       serviceAddress: "Service address",
@@ -138,17 +146,21 @@ import DateTimePicker, {
       selectTime: "Select Time",
       changeDate: "Change Date",
       changeTime: "Change Time",
+      cancel: "Cancel",
       done: "Done",
       bookingSummary: "Booking Summary",
       worker: "Worker",
       service: "Service",
-      selectedDateTime: "Preferred date and time",
+      selectedDateTime:
+        "Preferred date and time",
       estimatedPrice:
         "Estimated starting price",
-      bookingStatus: "Initial booking status",
+      bookingStatus:
+        "Initial booking status",
       pending: "Pending",
       submitBooking: "Submit Booking",
-      submitting: "Submitting booking...",
+      submitting:
+        "Submitting booking...",
       validationTitle:
         "Check your information",
       descriptionError:
@@ -161,28 +173,33 @@ import DateTimePicker, {
         "Please select your preferred time.",
       futureDateError:
         "The preferred date and time must be in the future.",
-      loginRequiredTitle: "Login required",
+      loginRequiredTitle:
+        "Login required",
       loginRequiredMessage:
         "Please log in before creating a booking.",
       customerOnlyTitle:
         "Customer account required",
       customerOnlyMessage:
         "Only customer accounts can create bookings.",
-      unavailableTitle: "Worker unavailable",
+      unavailableTitle:
+        "Worker unavailable",
       unavailableMessage:
         "This worker is not currently accepting new bookings.",
       bookingFailed: "Booking failed",
       unexpectedError:
         "Something went wrong while creating the booking.",
-      successTitle: "Booking submitted",
+      successTitle:
+        "Booking submitted",
       successMessage:
         "Your booking request was sent to the worker successfully.",
-      viewBookings: "View My Bookings",
+      viewBookings:
+        "View My Bookings",
     },
   
     ta: {
       back: "பின்செல்",
-      title: "சேவையை முன்பதிவு செய்யுங்கள்",
+      title:
+        "சேவையை முன்பதிவு செய்யுங்கள்",
       subtitle:
         "தேவையான பணியை விவரித்து, விருப்பமான தேதி மற்றும் நேரத்தைத் தேர்ந்தெடுக்கவும்.",
       loadingWorker:
@@ -191,7 +208,8 @@ import DateTimePicker, {
         "தேர்ந்தெடுக்கப்பட்ட பணியாளரை ஏற்ற முடியவில்லை.",
       selectedWorker:
         "தேர்ந்தெடுக்கப்பட்ட பணியாளர்",
-      verified: "சரிபார்க்கப்பட்டவர்",
+      verified:
+        "சரிபார்க்கப்பட்டவர்",
       notVerified:
         "சரிபார்க்கப்படாதவர்",
       available: "கிடைக்கிறார்",
@@ -201,23 +219,32 @@ import DateTimePicker, {
       years: "ஆண்டுகள்",
       rating: "மதிப்பீடு",
       newWorker: "புதிய பணியாளர்",
-      startingPrice: "தொடக்க கட்டணம்",
-      serviceDescription: "சேவை விவரம்",
+      startingPrice:
+        "தொடக்க கட்டணம்",
+      serviceDescription:
+        "சேவை விவரம்",
       descriptionPlaceholder:
         "பணியாளர் செய்ய வேண்டிய பணியை தெளிவாக விவரிக்கவும்",
-      serviceAddress: "சேவை முகவரி",
+      serviceAddress:
+        "சேவை முகவரி",
       addressPlaceholder:
         "சேவை தேவைப்படும் முழுமையான முகவரியை உள்ளிடவும்",
-      preferredDate: "விருப்பமான தேதி",
-      preferredTime: "விருப்பமான நேரம்",
+      preferredDate:
+        "விருப்பமான தேதி",
+      preferredTime:
+        "விருப்பமான நேரம்",
       selectDate:
         "தேதியைத் தேர்ந்தெடுக்கவும்",
       selectTime:
         "நேரத்தைத் தேர்ந்தெடுக்கவும்",
-      changeDate: "தேதியை மாற்றவும்",
-      changeTime: "நேரத்தை மாற்றவும்",
+      changeDate:
+        "தேதியை மாற்றவும்",
+      changeTime:
+        "நேரத்தை மாற்றவும்",
+      cancel: "ரத்து செய்",
       done: "முடிந்தது",
-      bookingSummary: "முன்பதிவு சுருக்கம்",
+      bookingSummary:
+        "முன்பதிவு சுருக்கம்",
       worker: "பணியாளர்",
       service: "சேவை",
       selectedDateTime:
@@ -269,7 +296,8 @@ import DateTimePicker, {
   
     si: {
       back: "ආපසු",
-      title: "සේවාවක් වෙන්කර ගන්න",
+      title:
+        "සේවාවක් වෙන්කර ගන්න",
       subtitle:
         "අවශ්‍ය කාර්යය විස්තර කර කැමති දිනය සහ වේලාව තෝරන්න.",
       loadingWorker:
@@ -279,27 +307,40 @@ import DateTimePicker, {
       selectedWorker:
         "තෝරාගත් සේවා සපයන්නා",
       verified: "තහවුරු කළ",
-      notVerified: "තහවුරු කර නැත",
-      available: "ලබා ගත හැක",
+      notVerified:
+        "තහවුරු කර නැත",
+      available:
+        "ලබා ගත හැක",
       unavailable:
         "දැනට ලබා ගත නොහැක",
       experience: "පළපුරුද්ද",
       years: "වසර",
       rating: "ඇගයීම",
-      newWorker: "නව සේවා සපයන්නෙක්",
-      startingPrice: "ආරම්භක මිල",
-      serviceDescription: "සේවා විස්තරය",
+      newWorker:
+        "නව සේවා සපයන්නෙක්",
+      startingPrice:
+        "ආරම්භක මිල",
+      serviceDescription:
+        "සේවා විස්තරය",
       descriptionPlaceholder:
         "සේවා සපයන්නා කළ යුතු කාර්යය පැහැදිලිව විස්තර කරන්න",
-      serviceAddress: "සේවා ලිපිනය",
+      serviceAddress:
+        "සේවා ලිපිනය",
       addressPlaceholder:
         "සේවාව අවශ්‍ය සම්පූර්ණ ලිපිනය ඇතුළත් කරන්න",
-      preferredDate: "කැමති දිනය",
-      preferredTime: "කැමති වේලාව",
-      selectDate: "දිනය තෝරන්න",
-      selectTime: "වේලාව තෝරන්න",
-      changeDate: "දිනය වෙනස් කරන්න",
-      changeTime: "වේලාව වෙනස් කරන්න",
+      preferredDate:
+        "කැමති දිනය",
+      preferredTime:
+        "කැමති වේලාව",
+      selectDate:
+        "දිනය තෝරන්න",
+      selectTime:
+        "වේලාව තෝරන්න",
+      changeDate:
+        "දිනය වෙනස් කරන්න",
+      changeTime:
+        "වේලාව වෙනස් කරන්න",
+      cancel: "අවලංගු කරන්න",
       done: "අවසන්",
       bookingSummary:
         "වෙන්කිරීමේ සාරාංශය",
@@ -312,8 +353,10 @@ import DateTimePicker, {
       bookingStatus:
         "ආරම්භක වෙන්කිරීමේ තත්ත්වය",
       pending: "පොරොත්තුවෙන්",
-      submitBooking: "වෙන්කිරීම යවන්න",
-      submitting: "වෙන්කිරීම යවමින්...",
+      submitBooking:
+        "වෙන්කිරීම යවන්න",
+      submitting:
+        "වෙන්කිරීම යවමින්...",
       validationTitle:
         "තොරතුරු පරීක්ෂා කරන්න",
       descriptionError:
@@ -417,14 +460,16 @@ import DateTimePicker, {
     ] = useState(false);
   
     const [
-      showIosDatePicker,
-      setShowIosDatePicker,
-    ] = useState(false);
+      iosPickerMode,
+      setIosPickerMode,
+    ] = useState<IosPickerMode>(null);
   
     const [
-      showIosTimePicker,
-      setShowIosTimePicker,
-    ] = useState(false);
+      iosTemporaryValue,
+      setIosTemporaryValue,
+    ] = useState<Date>(
+      createInitialDateTime()
+    );
   
     const [isLoading, setIsLoading] =
       useState(true);
@@ -688,8 +733,11 @@ import DateTimePicker, {
         return;
       }
   
-      setShowIosTimePicker(false);
-      setShowIosDatePicker(true);
+      setIosTemporaryValue(
+        new Date(preferredDateTime)
+      );
+  
+      setIosPickerMode("date");
     };
   
     const openTimePicker = () => {
@@ -713,32 +761,44 @@ import DateTimePicker, {
         return;
       }
   
-      setShowIosDatePicker(false);
-      setShowIosTimePicker(true);
+      setIosTemporaryValue(
+        new Date(preferredDateTime)
+      );
+  
+      setIosPickerMode("time");
     };
   
-    const handleIosDateChange = (
-      event: DateTimePickerEvent,
-      selectedDate?: Date
-    ) => {
-      if (
-        event.type === "set" &&
-        selectedDate
-      ) {
-        applySelectedDate(selectedDate);
-      }
+    const closeIosPicker = () => {
+      setIosPickerMode(null);
     };
   
-    const handleIosTimeChange = (
-      event: DateTimePickerEvent,
-      selectedTime?: Date
+    const handleIosPickerChange = (
+      _event: DateTimePickerEvent,
+      selectedValue?: Date
     ) => {
-      if (
-        event.type === "set" &&
-        selectedTime
-      ) {
-        applySelectedTime(selectedTime);
+      if (!selectedValue) {
+        return;
       }
+  
+      setIosTemporaryValue(
+        new Date(selectedValue)
+      );
+    };
+  
+    const confirmIosPicker = () => {
+      if (iosPickerMode === "date") {
+        applySelectedDate(
+          iosTemporaryValue
+        );
+      }
+  
+      if (iosPickerMode === "time") {
+        applySelectedTime(
+          iosTemporaryValue
+        );
+      }
+  
+      closeIosPicker();
     };
   
     const validateForm = (): boolean => {
@@ -924,14 +984,22 @@ import DateTimePicker, {
   
     if (isLoading) {
       return (
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.centerContainer}>
+        <SafeAreaView
+          style={styles.safeArea}
+        >
+          <View
+            style={
+              styles.centerContainer
+            }
+          >
             <ActivityIndicator
               size="large"
               color="#6D28D9"
             />
   
-            <Text style={styles.loadingText}>
+            <Text
+              style={styles.loadingText}
+            >
               {text.loadingWorker}
             </Text>
           </View>
@@ -944,24 +1012,36 @@ import DateTimePicker, {
       loadError !== ""
     ) {
       return (
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorContainer}>
+        <SafeAreaView
+          style={styles.safeArea}
+        >
+          <View
+            style={
+              styles.errorContainer
+            }
+          >
             <Text style={styles.errorIcon}>
               ⚠️
             </Text>
   
-            <Text style={styles.errorTitle}>
+            <Text
+              style={styles.errorTitle}
+            >
               {text.bookingFailed}
             </Text>
   
-            <Text style={styles.errorText}>
+            <Text
+              style={styles.errorText}
+            >
               {loadError ||
                 text.unexpectedError}
             </Text>
   
             <Pressable
               style={styles.returnButton}
-              onPress={() => router.back()}
+              onPress={() =>
+                router.back()
+              }
             >
               <Text
                 style={
@@ -977,7 +1057,9 @@ import DateTimePicker, {
     }
   
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView
+        style={styles.safeArea}
+      >
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={
@@ -987,23 +1069,33 @@ import DateTimePicker, {
           }
         >
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={
+              styles.content
+            }
             keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={
+              false
+            }
           >
             <View style={styles.header}>
               <Pressable
                 style={styles.backButton}
-                onPress={() => router.back()}
+                onPress={() =>
+                  router.back()
+                }
                 disabled={isSubmitting}
               >
-                <Text style={styles.backText}>
+                <Text
+                  style={styles.backText}
+                >
                   ← {text.back}
                 </Text>
               </Pressable>
   
               <Pressable
-                style={styles.languageButton}
+                style={
+                  styles.languageButton
+                }
                 onPress={() =>
                   router.push("/language")
                 }
@@ -1028,12 +1120,18 @@ import DateTimePicker, {
             </Text>
   
             <View style={styles.workerCard}>
-              <Text style={styles.sectionLabel}>
+              <Text
+                style={styles.sectionLabel}
+              >
                 {text.selectedWorker}
               </Text>
   
-              <View style={styles.workerTopRow}>
-                <View style={styles.workerAvatar}>
+              <View
+                style={styles.workerTopRow}
+              >
+                <View
+                  style={styles.workerAvatar}
+                >
                   <Text
                     style={
                       styles.workerAvatarText
@@ -1048,7 +1146,9 @@ import DateTimePicker, {
                     styles.workerInformation
                   }
                 >
-                  <Text style={styles.workerName}>
+                  <Text
+                    style={styles.workerName}
+                  >
                     {worker.full_name}
                   </Text>
   
@@ -1060,7 +1160,9 @@ import DateTimePicker, {
                     {worker.category}
                   </Text>
   
-                  <Text style={styles.workerTown}>
+                  <Text
+                    style={styles.workerTown}
+                  >
                     📍 {worker.town}
                   </Text>
                 </View>
@@ -1084,7 +1186,8 @@ import DateTimePicker, {
                     ]}
                   >
                     {worker.is_verified
-                      ? "✓ " + text.verified
+                      ? "✓ " +
+                        text.verified
                       : "○ " +
                         text.notVerified}
                   </Text>
@@ -1107,44 +1210,67 @@ import DateTimePicker, {
                     ]}
                   >
                     {worker.is_available
-                      ? "● " + text.available
+                      ? "● " +
+                        text.available
                       : "○ " +
                         text.unavailable}
                   </Text>
                 </View>
               </View>
   
-              <View style={styles.workerStats}>
-                <View style={styles.statColumn}>
-                  <Text style={styles.statLabel}>
+              <View
+                style={styles.workerStats}
+              >
+                <View
+                  style={styles.statColumn}
+                >
+                  <Text
+                    style={styles.statLabel}
+                  >
                     {text.experience}
                   </Text>
   
-                  <Text style={styles.statValue}>
+                  <Text
+                    style={styles.statValue}
+                  >
                     {worker.experience_years}{" "}
                     {text.years}
                   </Text>
                 </View>
   
-                <View style={styles.statColumn}>
-                  <Text style={styles.statLabel}>
+                <View
+                  style={styles.statColumn}
+                >
+                  <Text
+                    style={styles.statLabel}
+                  >
                     {text.rating}
                   </Text>
   
-                  <Text style={styles.statValue}>
+                  <Text
+                    style={styles.statValue}
+                  >
                     {workerRating > 0
                       ? "⭐ " +
-                        workerRating.toFixed(1)
+                        workerRating.toFixed(
+                          1
+                        )
                       : text.newWorker}
                   </Text>
                 </View>
   
-                <View style={styles.statColumn}>
-                  <Text style={styles.statLabel}>
+                <View
+                  style={styles.statColumn}
+                >
+                  <Text
+                    style={styles.statLabel}
+                  >
                     {text.startingPrice}
                   </Text>
   
-                  <Text style={styles.priceText}>
+                  <Text
+                    style={styles.priceText}
+                  >
                     LKR{" "}
                     {estimatedPrice.toLocaleString()}
                   </Text>
@@ -1153,12 +1279,18 @@ import DateTimePicker, {
             </View>
   
             {!worker.is_available && (
-              <View style={styles.warningCard}>
-                <Text style={styles.warningIcon}>
+              <View
+                style={styles.warningCard}
+              >
+                <Text
+                  style={styles.warningIcon}
+                >
                   ⚠️
                 </Text>
   
-                <Text style={styles.warningText}>
+                <Text
+                  style={styles.warningText}
+                >
                   {text.unavailableMessage}
                 </Text>
               </View>
@@ -1200,7 +1332,9 @@ import DateTimePicker, {
                   styles.addressInput,
                 ]}
                 value={serviceAddress}
-                onChangeText={setServiceAddress}
+                onChangeText={
+                  setServiceAddress
+                }
                 placeholder={
                   text.addressPlaceholder
                 }
@@ -1229,7 +1363,9 @@ import DateTimePicker, {
                   !worker.is_available
                 }
               >
-                <Text style={styles.pickerIcon}>
+                <Text
+                  style={styles.pickerIcon}
+                >
                   📅
                 </Text>
   
@@ -1243,42 +1379,12 @@ import DateTimePicker, {
                   {formattedDate}
                 </Text>
   
-                <Text style={styles.pickerArrow}>
+                <Text
+                  style={styles.pickerArrow}
+                >
                   ›
                 </Text>
               </Pressable>
-  
-              {Platform.OS === "ios" &&
-                showIosDatePicker && (
-                  <View style={styles.iosPickerCard}>
-                    <DateTimePicker
-                      value={preferredDateTime}
-                      mode="date"
-                      display="spinner"
-                      minimumDate={new Date()}
-                      onChange={
-                        handleIosDateChange
-                      }
-                    />
-  
-                    <Pressable
-                      style={styles.doneButton}
-                      onPress={() =>
-                        setShowIosDatePicker(
-                          false
-                        )
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.doneButtonText
-                        }
-                      >
-                        {text.done}
-                      </Text>
-                    </Pressable>
-                  </View>
-                )}
   
               <Text style={styles.label}>
                 {text.preferredTime}
@@ -1296,7 +1402,9 @@ import DateTimePicker, {
                   !worker.is_available
                 }
               >
-                <Text style={styles.pickerIcon}>
+                <Text
+                  style={styles.pickerIcon}
+                >
                   🕒
                 </Text>
   
@@ -1310,95 +1418,88 @@ import DateTimePicker, {
                   {formattedTime}
                 </Text>
   
-                <Text style={styles.pickerArrow}>
+                <Text
+                  style={styles.pickerArrow}
+                >
                   ›
                 </Text>
               </Pressable>
-  
-              {Platform.OS === "ios" &&
-                showIosTimePicker && (
-                  <View style={styles.iosPickerCard}>
-                    <DateTimePicker
-                      value={preferredDateTime}
-                      mode="time"
-                      display="spinner"
-                      onChange={
-                        handleIosTimeChange
-                      }
-                    />
-  
-                    <Pressable
-                      style={styles.doneButton}
-                      onPress={() =>
-                        setShowIosTimePicker(
-                          false
-                        )
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.doneButtonText
-                        }
-                      >
-                        {text.done}
-                      </Text>
-                    </Pressable>
-                  </View>
-                )}
             </View>
   
             <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>
+              <Text
+                style={styles.summaryTitle}
+              >
                 {text.bookingSummary}
               </Text>
   
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
+                <Text
+                  style={styles.summaryLabel}
+                >
                   {text.worker}
                 </Text>
   
-                <Text style={styles.summaryValue}>
+                <Text
+                  style={styles.summaryValue}
+                >
                   {worker.full_name}
                 </Text>
               </View>
   
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
+                <Text
+                  style={styles.summaryLabel}
+                >
                   {text.service}
                 </Text>
   
-                <Text style={styles.summaryValue}>
+                <Text
+                  style={styles.summaryValue}
+                >
                   {worker.category}
                 </Text>
               </View>
   
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
+                <Text
+                  style={styles.summaryLabel}
+                >
                   {text.selectedDateTime}
                 </Text>
   
-                <Text style={styles.summaryValue}>
+                <Text
+                  style={styles.summaryValue}
+                >
                   {completeDateTime}
                 </Text>
               </View>
   
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
+                <Text
+                  style={styles.summaryLabel}
+                >
                   {text.estimatedPrice}
                 </Text>
   
-                <Text style={styles.summaryPrice}>
+                <Text
+                  style={styles.summaryPrice}
+                >
                   LKR{" "}
                   {estimatedPrice.toLocaleString()}
                 </Text>
               </View>
   
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
+                <Text
+                  style={styles.summaryLabel}
+                >
                   {text.bookingStatus}
                 </Text>
   
-                <Text style={styles.pendingText}>
+                <Text
+                  style={styles.pendingText}
+                >
                   {text.pending}
                 </Text>
               </View>
@@ -1420,7 +1521,11 @@ import DateTimePicker, {
               }
             >
               {isSubmitting ? (
-                <View style={styles.submittingRow}>
+                <View
+                  style={
+                    styles.submittingRow
+                  }
+                >
                   <ActivityIndicator
                     size="small"
                     color="#FFFFFF"
@@ -1446,6 +1551,123 @@ import DateTimePicker, {
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
+  
+        {Platform.OS === "ios" && (
+          <Modal
+            visible={iosPickerMode !== null}
+            transparent
+            animationType="fade"
+            presentationStyle="overFullScreen"
+            onRequestClose={
+              closeIosPicker
+            }
+          >
+            <View
+              style={styles.modalOverlay}
+            >
+              <View
+                style={styles.modalCard}
+              >
+                <View
+                  style={styles.modalHeader}
+                >
+                  <Pressable
+                    style={
+                      styles.modalHeaderButton
+                    }
+                    onPress={
+                      closeIosPicker
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.modalCancelText
+                      }
+                    >
+                      {text.cancel}
+                    </Text>
+                  </Pressable>
+  
+                  <Text
+                    style={styles.modalTitle}
+                  >
+                    {iosPickerMode ===
+                    "date"
+                      ? text.preferredDate
+                      : text.preferredTime}
+                  </Text>
+  
+                  <Pressable
+                    style={
+                      styles.modalHeaderButton
+                    }
+                    onPress={
+                      confirmIosPicker
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.modalDoneText
+                      }
+                    >
+                      {text.done}
+                    </Text>
+                  </Pressable>
+                </View>
+  
+                <View
+                  style={
+                    styles.iosPickerContainer
+                  }
+                >
+                  <DateTimePicker
+                    value={
+                      iosTemporaryValue
+                    }
+                    mode={
+                      iosPickerMode ===
+                      "time"
+                        ? "time"
+                        : "date"
+                    }
+                    display="spinner"
+                    themeVariant="light"
+                    textColor="#111827"
+                    minimumDate={
+                      iosPickerMode ===
+                      "date"
+                        ? new Date()
+                        : undefined
+                    }
+                    onChange={
+                      handleIosPickerChange
+                    }
+                    style={
+                      styles.iosPicker
+                    }
+                  />
+                </View>
+  
+                <Pressable
+                  style={
+                    styles.modalConfirmButton
+                  }
+                  onPress={
+                    confirmIosPicker
+                  }
+                >
+                  <Text
+                    style={
+                      styles.modalConfirmText
+                    }
+                  >
+                    {text.done}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     );
   }
@@ -1806,27 +2028,6 @@ import DateTimePicker, {
       color: "#6D28D9",
     },
   
-    iosPickerCard: {
-      padding: 10,
-      marginBottom: 13,
-      borderWidth: 1,
-      borderColor: "#DDD6FE",
-      borderRadius: 12,
-      backgroundColor: "#F9FAFB",
-    },
-  
-    doneButton: {
-      alignItems: "center",
-      paddingVertical: 11,
-      borderRadius: 9,
-      backgroundColor: "#6D28D9",
-    },
-  
-    doneButtonText: {
-      fontWeight: "800",
-      color: "#FFFFFF",
-    },
-  
     summaryCard: {
       padding: 18,
       marginTop: 15,
@@ -1908,5 +2109,83 @@ import DateTimePicker, {
   
     disabledButton: {
       opacity: 0.5,
+    },
+  
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      backgroundColor:
+        "rgba(17, 24, 39, 0.55)",
+    },
+  
+    modalCard: {
+      paddingTop: 4,
+      paddingHorizontal: 18,
+      paddingBottom: 28,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      backgroundColor: "#FFFFFF",
+    },
+  
+    modalHeader: {
+      minHeight: 58,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      borderBottomWidth: 1,
+      borderBottomColor: "#E5E7EB",
+    },
+  
+    modalHeaderButton: {
+      minWidth: 70,
+      paddingVertical: 14,
+    },
+  
+    modalCancelText: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: "#6B7280",
+    },
+  
+    modalTitle: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: "800",
+      textAlign: "center",
+      color: "#1F2937",
+    },
+  
+    modalDoneText: {
+      fontSize: 15,
+      fontWeight: "800",
+      textAlign: "right",
+      color: "#6D28D9",
+    },
+  
+    iosPickerContainer: {
+      height: 220,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+  
+    iosPicker: {
+      width: "100%",
+      height: 210,
+    },
+  
+    modalConfirmButton: {
+      minHeight: 50,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 4,
+      borderRadius: 11,
+      backgroundColor: "#6D28D9",
+    },
+  
+    modalConfirmText: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: "#FFFFFF",
     },
   });

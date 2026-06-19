@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
+
 import {
     ActivityIndicator,
     Alert,
@@ -7,6 +8,7 @@ import {
     Platform,
     Pressable,
     SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -15,16 +17,38 @@ import {
 
 import { supabase } from "@/lib/supabase";
 
+type UserRole =
+  | "customer"
+  | "worker"
+  | "admin";
+
 export default function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [isLoading, setIsLoading] =
+    useState(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
+    const cleanedEmail =
+      email.trim().toLowerCase();
+
+    if (!cleanedEmail) {
       Alert.alert(
-        "Missing information",
-        "Please enter your email and password."
+        "Email required",
+        "Please enter your email address."
+      );
+
+      return;
+    }
+
+    if (!password) {
+      Alert.alert(
+        "Password required",
+        "Please enter your password."
       );
 
       return;
@@ -33,58 +57,101 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      const { data: authData, error: authError } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim().toLowerCase(),
+      const {
+        data: signInData,
+        error: signInError,
+      } = await supabase.auth
+        .signInWithPassword({
+          email: cleanedEmail,
           password,
         });
 
-      if (authError) {
-        Alert.alert("Login failed", authError.message);
-        return;
-      }
-
-      if (!authData.user) {
+      if (
+        signInError ||
+        !signInData.user
+      ) {
         Alert.alert(
           "Login failed",
-          "The account could not be loaded."
+          signInError?.message ??
+            "The account could not be logged in."
         );
 
         return;
       }
 
-      const { data: profile, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", authData.user.id)
-          .single();
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq(
+          "id",
+          signInData.user.id
+        )
+        .single();
 
-      if (profileError || !profile) {
-        console.error("Profile error:", profileError);
+      if (
+        profileError ||
+        !profileData
+      ) {
+        console.error(
+          "Login profile error:",
+          profileError
+        );
 
         await supabase.auth.signOut();
 
         Alert.alert(
-          "Profile not found",
-          "Your account exists, but the FixMate profile could not be loaded."
+          "Profile unavailable",
+          "The profile connected to this account could not be loaded."
         );
 
         return;
       }
 
-      if (profile.role === "worker") {
-        router.replace("/worker-dashboard");
+      const role =
+        profileData.role as UserRole;
+
+      if (role === "customer") {
+        router.replace(
+          "/customer-dashboard"
+        );
+
         return;
       }
 
-      router.replace("/customer-dashboard");
+      if (role === "worker") {
+        router.replace(
+          "/worker-dashboard"
+        );
+
+        return;
+      }
+
+      if (role === "admin") {
+        router.replace(
+          "/admin-dashboard"
+        );
+
+        return;
+      }
+
+      await supabase.auth.signOut();
+
+      Alert.alert(
+        "Unsupported account",
+        "This account does not have a valid FixMate role."
+      );
     } catch (error) {
-      console.error("Login error:", error);
+      console.error(
+        "Unexpected login error:",
+        error
+      );
 
       Alert.alert(
         "Unexpected error",
-        "Something went wrong. Please try again."
+        "Something went wrong while logging in."
       );
     } finally {
       setIsLoading(false);
@@ -92,79 +159,150 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+    >
       <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardView}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : undefined
+        }
       >
-        <View style={styles.container}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backText}>← Back</Text>
-          </Pressable>
-
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>🛠️</Text>
+        <ScrollView
+          contentContainerStyle={
+            styles.content
+          }
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={
+            false
+          }
+        >
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoText}>
+              🛠️
+            </Text>
           </View>
 
-          <Text style={styles.title}>Welcome Back</Text>
-
-          <Text style={styles.subtitle}>
-            Log in to continue using FixMate
+          <Text style={styles.appName}>
+            FixMate
           </Text>
 
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          <Text style={styles.title}>
+            Welcome Back
+          </Text>
 
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Enter your password"
-            secureTextEntry
-            autoCapitalize="none"
-            onSubmitEditing={handleLogin}
-          />
+          <Text style={styles.subtitle}>
+            Log in to continue managing your
+            FixMate services.
+          </Text>
+
+          <View style={styles.formCard}>
+            <Text style={styles.label}>
+              Email address
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Enter your email"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+            />
+
+            <Text style={styles.label}>
+              Password
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter your password"
+              placeholderTextColor="#9CA3AF"
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!isLoading}
+              onSubmitEditing={
+                handleLogin
+              }
+            />
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.loginButton,
+
+                pressed &&
+                  styles.pressedButton,
+
+                isLoading &&
+                  styles.disabledButton,
+              ]}
+              onPress={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator
+                  color="#FFFFFF"
+                />
+              ) : (
+                <Text
+                  style={
+                    styles.loginButtonText
+                  }
+                >
+                  Log In
+                </Text>
+              )}
+            </Pressable>
+          </View>
+
+          <View
+            style={styles.registerRow}
+          >
+            <Text
+              style={
+                styles.registerQuestion
+              }
+            >
+              Don&apos;t have an account?
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                router.push("/register")
+              }
+              disabled={isLoading}
+            >
+              <Text
+                style={
+                  styles.registerLink
+                }
+              >
+                Create Account
+              </Text>
+            </Pressable>
+          </View>
 
           <Pressable
-            style={({ pressed }) => [
-              styles.loginButton,
-              pressed && styles.pressedButton,
-              isLoading && styles.disabledButton,
-            ]}
-            onPress={handleLogin}
+            style={styles.homeLink}
+            onPress={() =>
+              router.replace("/")
+            }
             disabled={isLoading}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.loginButtonText}>Log In</Text>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={styles.registerLink}
-            onPress={() => router.replace("/register")}
-          >
-            <Text style={styles.registerLinkText}>
-              New to FixMate?{" "}
-              <Text style={styles.registerLinkStrong}>
-                Create an account
-              </Text>
+            <Text
+              style={styles.homeLinkText}
+            >
+              ← Back to Home
             </Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -175,60 +313,79 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7F4FF",
   },
-  screen: {
+
+  keyboardView: {
     flex: 1,
   },
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 25,
-  },
-  backButton: {
-    position: "absolute",
-    top: 20,
-    left: 25,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6D28D9",
-  },
-  logoContainer: {
-    width: 82,
-    height: 82,
-    alignSelf: "center",
+
+  content: {
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
-    borderRadius: 41,
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+  },
+
+  logoCircle: {
+    width: 74,
+    height: 74,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 37,
     backgroundColor: "#EDE9FE",
   },
-  logo: {
-    fontSize: 39,
+
+  logoText: {
+    fontSize: 38,
   },
+
+  appName: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#6D28D9",
+  },
+
   title: {
-    fontSize: 32,
+    marginTop: 17,
+    fontSize: 31,
     fontWeight: "800",
     textAlign: "center",
     color: "#1F2937",
   },
+
   subtitle: {
+    maxWidth: 310,
     marginTop: 8,
-    marginBottom: 28,
-    fontSize: 15,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: "center",
     color: "#6B7280",
   },
+
+  formCard: {
+    width: "100%",
+    padding: 20,
+    marginTop: 27,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+
   label: {
-    marginTop: 14,
+    marginTop: 5,
     marginBottom: 7,
     fontSize: 14,
     fontWeight: "700",
     color: "#374151",
   },
+
   input: {
-    minHeight: 52,
+    width: "100%",
+    minHeight: 53,
     paddingHorizontal: 15,
+    marginBottom: 15,
     borderWidth: 1,
     borderColor: "#D1D5DB",
     borderRadius: 11,
@@ -236,36 +393,56 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
   },
+
   loginButton: {
     minHeight: 54,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 25,
-    borderRadius: 12,
+    marginTop: 5,
+    borderRadius: 11,
     backgroundColor: "#6D28D9",
   },
+
   loginButtonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "800",
     color: "#FFFFFF",
   },
+
   pressedButton: {
-    opacity: 0.75,
+    opacity: 0.8,
   },
+
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
-  registerLink: {
+
+  registerRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 22,
+    marginTop: 22,
   },
-  registerLinkText: {
+
+  registerQuestion: {
+    marginRight: 6,
     fontSize: 14,
-    textAlign: "center",
     color: "#6B7280",
   },
-  registerLinkStrong: {
+
+  registerLink: {
+    fontSize: 14,
     fontWeight: "800",
+    color: "#6D28D9",
+  },
+
+  homeLink: {
+    padding: 15,
+    marginTop: 5,
+  },
+
+  homeLinkText: {
+    fontSize: 14,
+    fontWeight: "700",
     color: "#6D28D9",
   },
 });

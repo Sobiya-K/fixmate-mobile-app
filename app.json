@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "fixmate",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -17,7 +17,6 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-        
       },
       "package": "com.project.fixmate",
       "edgeToEdgeEnabled": true,
@@ -43,7 +42,8 @@
       ],
       "expo-sqlite",
       "@react-native-community/datetimepicker",
-      "expo-localization"
+      "expo-localization",
+      "./plugins/withPayHereAndroid"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,5 +1,12 @@
-import { router, useFocusEffect } from "expo-router";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import {
+  router,
+  useFocusEffect,
+} from "expo-router";
+
+import type {
+  RealtimeChannel,
+} from "@supabase/supabase-js";
+
 import {
   useCallback,
   useMemo,
@@ -18,8 +25,13 @@ import {
   View,
 } from "react-native";
 
-import { useLanguage } from "@/contexts/LanguageContext";
-import { supabase } from "@/lib/supabase";
+import {
+  useLanguage,
+} from "@/contexts/LanguageContext";
+
+import {
+  supabase,
+} from "@/lib/supabase";
 
 type BookingStatus =
   | "pending"
@@ -37,6 +49,18 @@ type LoadMode =
   | "initial"
   | "refresh"
   | "silent";
+
+type PaymentMethod =
+  | "cash"
+  | "payhere";
+
+type PaymentStatus =
+  | "pending"
+  | "processing"
+  | "paid"
+  | "failed"
+  | "cancelled"
+  | "refunded";
 
 type RawBooking = {
   id: string;
@@ -62,11 +86,26 @@ type ReviewSummary = {
   booking_id: string;
 };
 
+type PaymentSummary = {
+  id: string;
+  booking_id: string;
+  amount: number | string;
+  currency: string;
+  payment_method: PaymentMethod;
+  payment_status: PaymentStatus;
+  gateway_payment_id: string | null;
+  gateway_message: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type CustomerBooking = RawBooking & {
   worker_name: string;
   worker_town: string;
   worker_category: string;
   has_review: boolean;
+  payment: PaymentSummary | null;
 };
 
 const getStatusTheme = (
@@ -117,6 +156,49 @@ const getStatusTheme = (
   }
 };
 
+const getPaymentStatusTheme = (
+  status: PaymentStatus
+) => {
+  switch (status) {
+    case "paid":
+      return {
+        backgroundColor: "#D1FAE5",
+        textColor: "#047857",
+      };
+
+    case "processing":
+      return {
+        backgroundColor: "#DBEAFE",
+        textColor: "#1D4ED8",
+      };
+
+    case "failed":
+      return {
+        backgroundColor: "#FEE2E2",
+        textColor: "#B91C1C",
+      };
+
+    case "cancelled":
+      return {
+        backgroundColor: "#E5E7EB",
+        textColor: "#4B5563",
+      };
+
+    case "refunded":
+      return {
+        backgroundColor: "#EDE9FE",
+        textColor: "#6D28D9",
+      };
+
+    case "pending":
+    default:
+      return {
+        backgroundColor: "#FEF3C7",
+        textColor: "#92400E",
+      };
+  }
+};
+
 export default function MyBookingsScreen() {
   const {
     language,
@@ -138,27 +220,45 @@ export default function MyBookingsScreen() {
     [t]
   );
 
-  const [bookings, setBookings] = useState<
-    CustomerBooking[]
-  >([]);
+  const [
+    bookings,
+    setBookings,
+  ] = useState<CustomerBooking[]>([]);
 
-  const [selectedFilter, setSelectedFilter] =
-    useState<BookingFilter>("all");
+  const [
+    selectedFilter,
+    setSelectedFilter,
+  ] = useState<BookingFilter>("all");
 
-  const [isLoading, setIsLoading] =
-    useState(true);
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
 
-  const [isRefreshing, setIsRefreshing] =
-    useState(false);
+  const [
+    isRefreshing,
+    setIsRefreshing,
+  ] = useState(false);
 
-  const [isLiveConnected, setIsLiveConnected] =
-    useState(false);
+  const [
+    isLiveConnected,
+    setIsLiveConnected,
+  ] = useState(false);
 
-  const [cancellingBookingId, setCancellingBookingId] =
-    useState<string | null>(null);
+  const [
+    cancellingBookingId,
+    setCancellingBookingId,
+  ] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] =
-    useState("");
+  const [
+    selectingPaymentBookingId,
+    setSelectingPaymentBookingId,
+  ] = useState<string | null>(null);
+
+  const [
+    errorMessage,
+    setErrorMessage,
+  ] = useState("");
 
   const getStatusLabel = useCallback(
     (
@@ -208,8 +308,79 @@ export default function MyBookingsScreen() {
     [translate]
   );
 
+  const getPaymentMethodLabel =
+    useCallback(
+      (
+        method: PaymentMethod
+      ): string => {
+        if (method === "cash") {
+          return translate(
+            "payments.cashAfterService",
+            "Cash After Service"
+          );
+        }
+
+        return translate(
+          "payments.payHere",
+          "PayHere Online"
+        );
+      },
+      [translate]
+    );
+
+  const getPaymentStatusLabel =
+    useCallback(
+      (
+        status: PaymentStatus
+      ): string => {
+        switch (status) {
+          case "pending":
+            return translate(
+              "payments.pending",
+              "Pending"
+            );
+
+          case "processing":
+            return translate(
+              "payments.processing",
+              "Processing"
+            );
+
+          case "paid":
+            return translate(
+              "payments.paid",
+              "Paid"
+            );
+
+          case "failed":
+            return translate(
+              "payments.failed",
+              "Failed"
+            );
+
+          case "cancelled":
+            return translate(
+              "payments.cancelled",
+              "Cancelled"
+            );
+
+          case "refunded":
+            return translate(
+              "payments.refunded",
+              "Refunded"
+            );
+
+          default:
+            return status;
+        }
+      },
+      [translate]
+    );
+
   const formatBookingDate = useCallback(
-    (dateValue: string): string => {
+    (
+      dateValue: string
+    ): string => {
       const date = new Date(dateValue);
 
       if (Number.isNaN(date.getTime())) {
@@ -271,7 +442,10 @@ export default function MyBookingsScreen() {
           .eq("id", user.id)
           .single();
 
-        if (profileError || !profileData) {
+        if (
+          profileError ||
+          !profileData
+        ) {
           console.error(
             "Customer profile loading error:",
             profileError
@@ -287,13 +461,20 @@ export default function MyBookingsScreen() {
           return null;
         }
 
-        if (profileData.role !== "customer") {
-          if (profileData.role === "worker") {
+        if (
+          profileData.role !==
+          "customer"
+        ) {
+          if (
+            profileData.role ===
+            "worker"
+          ) {
             router.replace(
               "/worker-dashboard"
             );
           } else if (
-            profileData.role === "admin"
+            profileData.role ===
+            "admin"
           ) {
             router.replace(
               "/admin-dashboard"
@@ -337,7 +518,9 @@ export default function MyBookingsScreen() {
         ).map((booking) => ({
           ...booking,
 
-          status: String(booking.status)
+          status: String(
+            booking.status
+          )
             .trim()
             .toLowerCase()
             .replace(
@@ -355,10 +538,11 @@ export default function MyBookingsScreen() {
           ),
         ];
 
-        const workerMap = new Map<
-          string,
-          WorkerSummary
-        >();
+        const workerMap =
+          new Map<
+            string,
+            WorkerSummary
+          >();
 
         if (workerIds.length > 0) {
           const {
@@ -392,9 +576,11 @@ export default function MyBookingsScreen() {
         const reviewedBookingIds =
           new Set<string>();
 
-        const bookingIds = rawBookings.map(
-          (booking) => booking.id
-        );
+        const bookingIds =
+          rawBookings.map(
+            (booking) =>
+              booking.id
+          );
 
         if (bookingIds.length > 0) {
           const {
@@ -403,8 +589,14 @@ export default function MyBookingsScreen() {
           } = await supabase
             .from("reviews")
             .select("booking_id")
-            .eq("customer_id", user.id)
-            .in("booking_id", bookingIds);
+            .eq(
+              "customer_id",
+              user.id
+            )
+            .in(
+              "booking_id",
+              bookingIds
+            );
 
           if (reviewError) {
             console.error(
@@ -423,42 +615,110 @@ export default function MyBookingsScreen() {
           }
         }
 
-        const preparedBookings:
-          CustomerBooking[] =
-          rawBookings.map((booking) => {
-            const worker = workerMap.get(
-              booking.worker_id
+        const paymentMap =
+          new Map<
+            string,
+            PaymentSummary
+          >();
+
+        if (bookingIds.length > 0) {
+          const {
+            data: paymentData,
+            error: paymentError,
+          } = await supabase
+            .from("payments")
+            .select(
+              "id, booking_id, amount, currency, payment_method, payment_status, gateway_payment_id, gateway_message, paid_at, created_at, updated_at"
+            )
+            .eq(
+              "customer_id",
+              user.id
+            )
+            .in(
+              "booking_id",
+              bookingIds
             );
 
-            return {
-              ...booking,
+          if (paymentError) {
+            console.error(
+              "Payments loading error:",
+              paymentError
+            );
+          } else {
+            (
+              (paymentData ??
+                []) as PaymentSummary[]
+            ).forEach((payment) => {
+              paymentMap.set(
+                payment.booking_id,
+                {
+                  ...payment,
 
-              worker_name:
-                worker?.full_name ||
-                translate(
-                  "bookings.worker",
-                  "FixMate Worker"
-                ),
+                  payment_method:
+                    String(
+                      payment.payment_method
+                    )
+                      .trim()
+                      .toLowerCase() as PaymentMethod,
 
-              worker_town:
-                worker?.town ||
-                translate(
-                  "common.notProvided",
-                  "Not provided"
-                ),
+                  payment_status:
+                    String(
+                      payment.payment_status
+                    )
+                      .trim()
+                      .toLowerCase() as PaymentStatus,
+                }
+              );
+            });
+          }
+        }
 
-              worker_category:
-                worker?.category ||
-                booking.service_category,
+        const preparedBookings:
+          CustomerBooking[] =
+          rawBookings.map(
+            (booking) => {
+              const worker =
+                workerMap.get(
+                  booking.worker_id
+                );
 
-              has_review:
-                reviewedBookingIds.has(
-                  booking.id
-                ),
-            };
-          });
+              return {
+                ...booking,
 
-        setBookings(preparedBookings);
+                worker_name:
+                  worker?.full_name ||
+                  translate(
+                    "bookings.worker",
+                    "FixMate Worker"
+                  ),
+
+                worker_town:
+                  worker?.town ||
+                  translate(
+                    "common.notProvided",
+                    "Not provided"
+                  ),
+
+                worker_category:
+                  worker?.category ||
+                  booking.service_category,
+
+                has_review:
+                  reviewedBookingIds.has(
+                    booking.id
+                  ),
+
+                payment:
+                  paymentMap.get(
+                    booking.id
+                  ) ?? null,
+              };
+            }
+          );
+
+        setBookings(
+          preparedBookings
+        );
 
         return user.id;
       } catch (error) {
@@ -490,60 +750,96 @@ export default function MyBookingsScreen() {
       let realtimeChannel:
         RealtimeChannel | null = null;
 
-      const startScreen = async () => {
-        const customerId =
-          await loadBookings("initial");
+      const startScreen =
+        async () => {
+          const customerId =
+            await loadBookings(
+              "initial"
+            );
 
-        if (
-          !customerId ||
-          !isScreenActive
-        ) {
-          return;
-        }
+          if (
+            !customerId ||
+            !isScreenActive
+          ) {
+            return;
+          }
 
-        realtimeChannel = supabase
-          .channel(
-            "customer-bookings-" +
-              customerId
-          )
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: "bookings",
-              filter:
-                "customer_id=eq." +
-                customerId,
-            },
-            async (payload) => {
-              console.log(
-                "Customer booking realtime event:",
-                payload
+          realtimeChannel =
+            supabase
+              .channel(
+                "customer-bookings-payments-" +
+                  customerId
+              )
+              .on(
+                "postgres_changes",
+                {
+                  event: "*",
+                  schema: "public",
+                  table: "bookings",
+                  filter:
+                    "customer_id=eq." +
+                    customerId,
+                },
+                async (payload) => {
+                  console.log(
+                    "Customer booking realtime event:",
+                    payload
+                  );
+
+                  if (
+                    isScreenActive
+                  ) {
+                    await loadBookings(
+                      "silent"
+                    );
+                  }
+                }
+              )
+              .on(
+                "postgres_changes",
+                {
+                  event: "*",
+                  schema: "public",
+                  table: "payments",
+                  filter:
+                    "customer_id=eq." +
+                    customerId,
+                },
+                async (payload) => {
+                  console.log(
+                    "Customer payment realtime event:",
+                    payload
+                  );
+
+                  if (
+                    isScreenActive
+                  ) {
+                    await loadBookings(
+                      "silent"
+                    );
+                  }
+                }
+              )
+              .subscribe(
+                (status) => {
+                  if (
+                    !isScreenActive
+                  ) {
+                    return;
+                  }
+
+                  console.log(
+                    "Customer realtime connection:",
+                    status
+                  );
+
+                  setIsLiveConnected(
+                    status ===
+                      "SUBSCRIBED"
+                  );
+                }
               );
-
-              if (isScreenActive) {
-                await loadBookings(
-                  "silent"
-                );
-              }
-            }
-          )
-          .subscribe((status) => {
-            if (!isScreenActive) {
-              return;
-            }
-
-            console.log(
-              "Customer realtime connection:",
-              status
-            );
-
-            setIsLiveConnected(
-              status === "SUBSCRIBED"
-            );
-          });
-      };
+        };
 
       void startScreen();
 
@@ -564,47 +860,67 @@ export default function MyBookingsScreen() {
   const filterOptions = useMemo(
     () => [
       {
-        value: "all" as BookingFilter,
+        value:
+          "all" as BookingFilter,
+
         label: translate(
           "bookings.all",
           "All"
         ),
       },
       {
-        value: "pending" as BookingFilter,
-        label: getStatusLabel("pending"),
+        value:
+          "pending" as BookingFilter,
+
+        label:
+          getStatusLabel(
+            "pending"
+          ),
       },
       {
-        value: "accepted" as BookingFilter,
-        label: getStatusLabel("accepted"),
+        value:
+          "accepted" as BookingFilter,
+
+        label:
+          getStatusLabel(
+            "accepted"
+          ),
       },
       {
         value:
           "in_progress" as BookingFilter,
-        label: getStatusLabel(
-          "in_progress"
-        ),
+
+        label:
+          getStatusLabel(
+            "in_progress"
+          ),
       },
       {
         value:
           "completed" as BookingFilter,
-        label: getStatusLabel(
-          "completed"
-        ),
+
+        label:
+          getStatusLabel(
+            "completed"
+          ),
       },
       {
         value:
           "cancelled" as BookingFilter,
-        label: getStatusLabel(
-          "cancelled"
-        ),
+
+        label:
+          getStatusLabel(
+            "cancelled"
+          ),
       },
       {
         value:
           "rejected" as BookingFilter,
-        label: getStatusLabel(
-          "rejected"
-        ),
+
+        label:
+          getStatusLabel(
+            "rejected"
+          ),
       },
     ],
     [
@@ -613,20 +929,24 @@ export default function MyBookingsScreen() {
     ]
   );
 
-  const filteredBookings = useMemo(() => {
-    if (selectedFilter === "all") {
-      return bookings;
-    }
+  const filteredBookings =
+    useMemo(() => {
+      if (
+        selectedFilter ===
+        "all"
+      ) {
+        return bookings;
+      }
 
-    return bookings.filter(
-      (booking) =>
-        booking.status ===
-        selectedFilter
-    );
-  }, [
-    bookings,
-    selectedFilter,
-  ]);
+      return bookings.filter(
+        (booking) =>
+          booking.status ===
+          selectedFilter
+      );
+    }, [
+      bookings,
+      selectedFilter,
+    ]);
 
   const cancelBooking = async (
     booking: CustomerBooking
@@ -636,17 +956,25 @@ export default function MyBookingsScreen() {
     );
 
     try {
-      const { error } = await supabase
+      const {
+        error,
+      } = await supabase
         .from("bookings")
         .update({
           status: "cancelled",
         })
-        .eq("id", booking.id)
+        .eq(
+          "id",
+          booking.id
+        )
         .eq(
           "customer_id",
           booking.customer_id
         )
-        .eq("status", "pending");
+        .eq(
+          "status",
+          "pending"
+        );
 
       if (error) {
         Alert.alert(
@@ -663,7 +991,9 @@ export default function MyBookingsScreen() {
       setBookings(
         (currentBookings) =>
           currentBookings.map(
-            (currentBooking) =>
+            (
+              currentBooking
+            ) =>
               currentBooking.id ===
               booking.id
                 ? {
@@ -726,6 +1056,7 @@ export default function MyBookingsScreen() {
             "common.no",
             "No"
           ),
+
           style: "cancel",
         },
         {
@@ -733,20 +1064,161 @@ export default function MyBookingsScreen() {
             "common.yesCancel",
             "Yes, Cancel"
           ),
+
           style: "destructive",
 
           onPress: () =>
-            cancelBooking(booking),
+            cancelBooking(
+              booking
+            ),
         },
       ]
     );
   };
 
+  const chooseCashPayment =
+    async (
+      booking: CustomerBooking
+    ) => {
+      setSelectingPaymentBookingId(
+        booking.id
+      );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "choose_cash_payment",
+          {
+            p_booking_id:
+              booking.id,
+          }
+        );
+
+        console.log(
+          "Cash payment selection response:",
+          {
+            data,
+            error,
+          }
+        );
+
+        if (error) {
+          Alert.alert(
+            translate(
+              "payments.selectionFailed",
+              "Payment method selection failed"
+            ),
+            error.message
+          );
+
+          return;
+        }
+
+        await loadBookings(
+          "silent"
+        );
+
+        Alert.alert(
+          translate(
+            "payments.cashSelectedTitle",
+            "Cash payment selected"
+          ),
+          translate(
+            "payments.cashSelectedMessage",
+            "You can pay the worker in cash after the service is completed."
+          )
+        );
+      } catch (error) {
+        console.error(
+          "Unexpected cash payment selection error:",
+          error
+        );
+
+        Alert.alert(
+          translate(
+            "common.error",
+            "Unexpected error"
+          ),
+          translate(
+            "payments.unexpectedError",
+            "Something went wrong while selecting the payment method."
+          )
+        );
+      } finally {
+        setSelectingPaymentBookingId(
+          null
+        );
+      }
+    };
+
+  const confirmCashPaymentSelection =
+    (
+      booking: CustomerBooking
+    ) => {
+      Alert.alert(
+        translate(
+          "payments.chooseCashTitle",
+          "Choose Cash After Service?"
+        ),
+        translate(
+          "payments.chooseCashMessage",
+          "You will pay the worker directly after the service is completed. The worker must confirm receiving the cash."
+        ),
+        [
+          {
+            text: translate(
+              "common.cancel",
+              "Cancel"
+            ),
+
+            style: "cancel",
+          },
+          {
+            text: translate(
+              "payments.confirmCash",
+              "Choose Cash"
+            ),
+
+            onPress: () =>
+              chooseCashPayment(
+                booking
+              ),
+          },
+        ]
+      );
+    };
+
+  const showOnlinePaymentInformation =
+    () => {
+      Alert.alert(
+        translate(
+          "payments.onlinePaymentTitle",
+          "PayHere Online Payment"
+        ),
+        translate(
+          "payments.onlinePaymentMessage",
+          "The secure PayHere Sandbox checkout will be connected in the next development step. Cash After Service is available now."
+        ),
+        [
+          {
+            text: translate(
+              "common.ok",
+              "OK"
+            ),
+          },
+        ]
+      );
+    };
+
   const openWorker = (
     workerId: string
   ) => {
     router.push({
-      pathname: "/worker/[id]",
+      pathname:
+        "/worker/[id]",
+
       params: {
         id: workerId,
       },
@@ -759,6 +1231,7 @@ export default function MyBookingsScreen() {
     router.push({
       pathname:
         "/review/[bookingId]",
+
       params: {
         bookingId,
       },
@@ -767,14 +1240,22 @@ export default function MyBookingsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centerContainer}>
+      <SafeAreaView
+        style={styles.safeArea}
+      >
+        <View
+          style={
+            styles.centerContainer
+          }
+        >
           <ActivityIndicator
             size="large"
             color="#6D28D9"
           />
 
-          <Text style={styles.loadingText}>
+          <Text
+            style={styles.loadingText}
+          >
             {translate(
               "bookings.loading",
               "Loading your bookings..."
@@ -786,30 +1267,46 @@ export default function MyBookingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+    >
       <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          styles.content
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() =>
-              loadBookings("refresh")
+            refreshing={
+              isRefreshing
             }
-            colors={["#6D28D9"]}
+            onRefresh={() =>
+              loadBookings(
+                "refresh"
+              )
+            }
+            colors={[
+              "#6D28D9",
+            ]}
           />
         }
       >
         <View style={styles.header}>
           <Pressable
-            style={styles.backButton}
+            style={
+              styles.backButton
+            }
             onPress={() =>
               router.replace(
                 "/customer-dashboard"
               )
             }
           >
-            <Text style={styles.backText}>
+            <Text
+              style={styles.backText}
+            >
               ←{" "}
               {translate(
                 "common.back",
@@ -819,30 +1316,48 @@ export default function MyBookingsScreen() {
           </Pressable>
 
           <Pressable
-            style={styles.languageButton}
+            style={
+              styles.languageButton
+            }
             onPress={() =>
-              router.push("/language")
+              router.push(
+                "/language"
+              )
             }
           >
-            <Text style={styles.languageText}>
+            <Text
+              style={
+                styles.languageText
+              }
+            >
               🌐 {languageName}
             </Text>
           </Pressable>
         </View>
 
-        <View style={styles.titleRow}>
-          <View style={styles.titleInformation}>
-            <Text style={styles.title}>
+        <View
+          style={styles.titleRow}
+        >
+          <View
+            style={
+              styles.titleInformation
+            }
+          >
+            <Text
+              style={styles.title}
+            >
               {translate(
                 "bookings.title",
                 "My Bookings"
               )}
             </Text>
 
-            <Text style={styles.subtitle}>
+            <Text
+              style={styles.subtitle}
+            >
               {translate(
                 "bookings.subtitle",
-                "Track and manage your service bookings."
+                "Track bookings, payments and service progress."
               )}
             </Text>
           </View>
@@ -897,7 +1412,9 @@ export default function MyBookingsScreen() {
 
               return (
                 <Pressable
-                  key={option.value}
+                  key={
+                    option.value
+                  }
                   style={[
                     styles.filterButton,
 
@@ -926,8 +1443,12 @@ export default function MyBookingsScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.countRow}>
-          <Text style={styles.countText}>
+        <View
+          style={styles.countRow}
+        >
+          <Text
+            style={styles.countText}
+          >
             {filteredBookings.length}{" "}
             {translate(
               "bookings.results",
@@ -937,17 +1458,25 @@ export default function MyBookingsScreen() {
         </View>
 
         {errorMessage !== "" && (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>
+          <View
+            style={styles.errorCard}
+          >
+            <Text
+              style={styles.errorText}
+            >
               {errorMessage}
             </Text>
 
             <Pressable
               onPress={() =>
-                loadBookings("refresh")
+                loadBookings(
+                  "refresh"
+                )
               }
             >
-              <Text style={styles.retryText}>
+              <Text
+                style={styles.retryText}
+              >
                 {translate(
                   "common.retry",
                   "Try again"
@@ -957,22 +1486,32 @@ export default function MyBookingsScreen() {
           </View>
         )}
 
-        {filteredBookings.length === 0 &&
+        {filteredBookings.length ===
+          0 &&
         errorMessage === "" ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>
+          <View
+            style={styles.emptyCard}
+          >
+            <Text
+              style={styles.emptyIcon}
+            >
               📭
             </Text>
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={styles.emptyTitle}
+            >
               {translate(
                 "bookings.noBookings",
                 "No bookings found"
               )}
             </Text>
 
-            <Text style={styles.emptyText}>
-              {selectedFilter === "all"
+            <Text
+              style={styles.emptyText}
+            >
+              {selectedFilter ===
+              "all"
                 ? translate(
                     "bookings.noBookingsText",
                     "Book a skilled worker and your booking will appear here."
@@ -986,7 +1525,9 @@ export default function MyBookingsScreen() {
             {selectedFilter ===
               "all" && (
               <Pressable
-                style={styles.findWorkerButton}
+                style={
+                  styles.findWorkerButton
+                }
                 onPress={() =>
                   router.replace(
                     "/customer-dashboard"
@@ -1018,14 +1559,67 @@ export default function MyBookingsScreen() {
                 cancellingBookingId ===
                 booking.id;
 
-              const price = Number(
-                booking.estimated_price
-              );
+              const isSelectingPayment =
+                selectingPaymentBookingId ===
+                booking.id;
+
+              const price =
+                Number(
+                  booking.estimated_price
+                );
+
+              const safePrice =
+                Number.isNaN(price)
+                  ? 0
+                  : price;
+
+              const payment =
+                booking.payment;
+
+              const paymentAmount =
+                Number(
+                  payment?.amount ??
+                    safePrice
+                );
+
+              const safePaymentAmount =
+                Number.isNaN(
+                  paymentAmount
+                )
+                  ? safePrice
+                  : paymentAmount;
+
+              const paymentAvailable =
+                booking.status ===
+                  "accepted" ||
+                booking.status ===
+                  "in_progress" ||
+                booking.status ===
+                  "completed";
+
+              const canSelectPayment =
+                paymentAvailable &&
+                (
+                  payment === null ||
+                  payment.payment_status ===
+                    "failed" ||
+                  payment.payment_status ===
+                    "cancelled"
+                );
+
+              const paymentTheme =
+                payment
+                  ? getPaymentStatusTheme(
+                      payment.payment_status
+                    )
+                  : null;
 
               return (
                 <View
                   key={booking.id}
-                  style={styles.bookingCard}
+                  style={
+                    styles.bookingCard
+                  }
                 >
                   <View
                     style={
@@ -1066,7 +1660,9 @@ export default function MyBookingsScreen() {
                             styles.workerName
                           }
                         >
-                          {booking.worker_name}
+                          {
+                            booking.worker_name
+                          }
                         </Text>
 
                         <Text
@@ -1085,7 +1681,9 @@ export default function MyBookingsScreen() {
                           }
                         >
                           📍{" "}
-                          {booking.worker_town}
+                          {
+                            booking.worker_town
+                          }
                         </Text>
                       </View>
                     </Pressable>
@@ -1093,6 +1691,7 @@ export default function MyBookingsScreen() {
                     <View
                       style={[
                         styles.statusBadge,
+
                         {
                           backgroundColor:
                             statusTheme.backgroundColor,
@@ -1102,6 +1701,7 @@ export default function MyBookingsScreen() {
                       <Text
                         style={[
                           styles.statusText,
+
                           {
                             color:
                               statusTheme.textColor,
@@ -1120,7 +1720,9 @@ export default function MyBookingsScreen() {
                   />
 
                   <Text
-                    style={styles.detailLabel}
+                    style={
+                      styles.detailLabel
+                    }
                   >
                     {translate(
                       "bookings.service",
@@ -1129,7 +1731,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailValue}
+                    style={
+                      styles.detailValue
+                    }
                   >
                     {
                       booking.service_category
@@ -1137,7 +1741,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailLabel}
+                    style={
+                      styles.detailLabel
+                    }
                   >
                     {translate(
                       "bookings.description",
@@ -1156,7 +1762,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailLabel}
+                    style={
+                      styles.detailLabel
+                    }
                   >
                     {translate(
                       "bookings.address",
@@ -1165,7 +1773,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailValue}
+                    style={
+                      styles.detailValue
+                    }
                   >
                     {
                       booking.service_address
@@ -1173,7 +1783,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailLabel}
+                    style={
+                      styles.detailLabel
+                    }
                   >
                     {translate(
                       "bookings.preferredDate",
@@ -1182,7 +1794,9 @@ export default function MyBookingsScreen() {
                   </Text>
 
                   <Text
-                    style={styles.detailValue}
+                    style={
+                      styles.detailValue
+                    }
                   >
                     {formatBookingDate(
                       booking.preferred_date
@@ -1193,7 +1807,9 @@ export default function MyBookingsScreen() {
                     style={styles.priceRow}
                   >
                     <Text
-                      style={styles.priceLabel}
+                      style={
+                        styles.priceLabel
+                      }
                     >
                       {translate(
                         "bookings.estimatedPrice",
@@ -1202,13 +1818,441 @@ export default function MyBookingsScreen() {
                     </Text>
 
                     <Text
-                      style={styles.priceValue}
+                      style={
+                        styles.priceValue
+                      }
                     >
                       LKR{" "}
-                      {Number.isNaN(price)
-                        ? "0"
-                        : price.toLocaleString()}
+                      {safePrice.toLocaleString()}
                     </Text>
+                  </View>
+
+                  <View
+                    style={
+                      styles.paymentSection
+                    }
+                  >
+                    <View
+                      style={
+                        styles.paymentTitleRow
+                      }
+                    >
+                      <View
+                        style={
+                          styles.paymentTitleContainer
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.paymentIcon
+                          }
+                        >
+                          💳
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.paymentTitle
+                          }
+                        >
+                          {translate(
+                            "payments.title",
+                            "Payment"
+                          )}
+                        </Text>
+                      </View>
+
+                      {payment &&
+                        paymentTheme && (
+                          <View
+                            style={[
+                              styles.paymentStatusBadge,
+
+                              {
+                                backgroundColor:
+                                  paymentTheme.backgroundColor,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.paymentStatusText,
+
+                                {
+                                  color:
+                                    paymentTheme.textColor,
+                                },
+                              ]}
+                            >
+                              {getPaymentStatusLabel(
+                                payment.payment_status
+                              )}
+                            </Text>
+                          </View>
+                        )}
+                    </View>
+
+                    {!paymentAvailable && (
+                      <View
+                        style={
+                          styles.paymentInformationCard
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.paymentInformationText
+                          }
+                        >
+                          {booking.status ===
+                          "pending"
+                            ? translate(
+                                "payments.waitForAcceptance",
+                                "Payment becomes available after the worker accepts this booking."
+                              )
+                            : translate(
+                                "payments.notAvailable",
+                                "Payment is not available for this booking."
+                              )}
+                        </Text>
+                      </View>
+                    )}
+
+                    {paymentAvailable &&
+                      payment ===
+                        null && (
+                        <>
+                          <View
+                            style={
+                              styles.paymentDetails
+                            }
+                          >
+                            <View
+                              style={
+                                styles.paymentDetailRow
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.paymentDetailLabel
+                                }
+                              >
+                                {translate(
+                                  "payments.amount",
+                                  "Amount"
+                                )}
+                              </Text>
+
+                              <Text
+                                style={
+                                  styles.paymentAmount
+                                }
+                              >
+                                LKR{" "}
+                                {safePrice.toLocaleString()}
+                              </Text>
+                            </View>
+
+                            <View
+                              style={
+                                styles.paymentDetailRow
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.paymentDetailLabel
+                                }
+                              >
+                                {translate(
+                                  "payments.status",
+                                  "Payment status"
+                                )}
+                              </Text>
+
+                              <Text
+                                style={
+                                  styles.notSelectedText
+                                }
+                              >
+                                {translate(
+                                  "payments.notSelected",
+                                  "Not selected"
+                                )}
+                              </Text>
+                            </View>
+                          </View>
+                        </>
+                      )}
+
+                    {payment && (
+                      <View
+                        style={
+                          styles.paymentDetails
+                        }
+                      >
+                        <View
+                          style={
+                            styles.paymentDetailRow
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.paymentDetailLabel
+                            }
+                          >
+                            {translate(
+                              "payments.method",
+                              "Payment method"
+                            )}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.paymentDetailValue
+                            }
+                          >
+                            {getPaymentMethodLabel(
+                              payment.payment_method
+                            )}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={
+                            styles.paymentDetailRow
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.paymentDetailLabel
+                            }
+                          >
+                            {translate(
+                              "payments.amount",
+                              "Amount"
+                            )}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.paymentAmount
+                            }
+                          >
+                            {
+                              payment.currency
+                            }{" "}
+                            {safePaymentAmount.toLocaleString()}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={
+                            styles.paymentDetailRow
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.paymentDetailLabel
+                            }
+                          >
+                            {translate(
+                              "payments.status",
+                              "Payment status"
+                            )}
+                          </Text>
+
+                          <Text
+                            style={[
+                              styles.paymentDetailValue,
+
+                              {
+                                color:
+                                  paymentTheme?.textColor ??
+                                  "#374151",
+                              },
+                            ]}
+                          >
+                            {getPaymentStatusLabel(
+                              payment.payment_status
+                            )}
+                          </Text>
+                        </View>
+
+                        {payment.gateway_payment_id && (
+                          <View
+                            style={
+                              styles.paymentDetailRow
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.paymentDetailLabel
+                              }
+                            >
+                              {translate(
+                                "payments.transactionId",
+                                "Transaction ID"
+                              )}
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.transactionText
+                              }
+                            >
+                              {
+                                payment.gateway_payment_id
+                              }
+                            </Text>
+                          </View>
+                        )}
+
+                        {payment.paid_at && (
+                          <View
+                            style={
+                              styles.paymentDetailRow
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.paymentDetailLabel
+                              }
+                            >
+                              {translate(
+                                "payments.paidOn",
+                                "Paid on"
+                              )}
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.paymentDetailValue
+                              }
+                            >
+                              {formatBookingDate(
+                                payment.paid_at
+                              )}
+                            </Text>
+                          </View>
+                        )}
+
+                        {payment.payment_method ===
+                          "cash" &&
+                          payment.payment_status ===
+                            "pending" && (
+                            <View
+                              style={
+                                styles.cashNotice
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.cashNoticeText
+                                }
+                              >
+                                {booking.status ===
+                                "completed"
+                                  ? translate(
+                                      "payments.waitingWorkerConfirmation",
+                                      "The service is completed. Waiting for the worker to confirm that the cash was received."
+                                    )
+                                  : translate(
+                                      "payments.cashPaymentInstruction",
+                                      "Pay the worker directly after the service. The worker will confirm the payment after completing the job."
+                                    )}
+                              </Text>
+                            </View>
+                          )}
+
+                        {payment.payment_status ===
+                          "paid" && (
+                          <View
+                            style={
+                              styles.paidConfirmation
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.paidConfirmationText
+                              }
+                            >
+                              ✓{" "}
+                              {translate(
+                                "payments.paymentCompleted",
+                                "Payment completed successfully"
+                              )}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    {canSelectPayment && (
+                      <View
+                        style={
+                          styles.paymentButtonContainer
+                        }
+                      >
+                        <Pressable
+                          style={[
+                            styles.cashPaymentButton,
+
+                            isSelectingPayment &&
+                              styles.disabledButton,
+                          ]}
+                          onPress={() =>
+                            confirmCashPaymentSelection(
+                              booking
+                            )
+                          }
+                          disabled={
+                            isSelectingPayment
+                          }
+                        >
+                          {isSelectingPayment ? (
+                            <ActivityIndicator
+                              size="small"
+                              color="#FFFFFF"
+                            />
+                          ) : (
+                            <Text
+                              style={
+                                styles.paymentButtonText
+                              }
+                            >
+                              💵{" "}
+                              {translate(
+                                "payments.cashAfterService",
+                                "Cash After Service"
+                              )}
+                            </Text>
+                          )}
+                        </Pressable>
+
+                        <Pressable
+                          style={
+                            styles.onlinePaymentButton
+                          }
+                          onPress={
+                            showOnlinePaymentInformation
+                          }
+                          disabled={
+                            isSelectingPayment
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.onlinePaymentButtonText
+                            }
+                          >
+                            💳{" "}
+                            {translate(
+                              "payments.payOnline",
+                              "Pay Online"
+                            )}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
 
                   {booking.status ===
@@ -1330,389 +2374,596 @@ export default function MyBookingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F7F4FF",
-  },
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        "#F7F4FF",
+    },
 
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 50,
-  },
+    content: {
+      paddingHorizontal: 20,
+      paddingTop: 18,
+      paddingBottom: 50,
+    },
 
-  centerContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    centerContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+    },
 
-  loadingText: {
-    marginTop: 14,
-    color: "#6B7280",
-  },
+    loadingText: {
+      marginTop: 14,
+      color: "#6B7280",
+    },
 
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
 
-  backButton: {
-    paddingVertical: 10,
-  },
+    backButton: {
+      paddingVertical: 10,
+    },
 
-  backText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#6D28D9",
-  },
+    backText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: "#6D28D9",
+    },
 
-  languageButton: {
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: "#C4B5FD",
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-  },
+    languageButton: {
+      paddingHorizontal: 13,
+      paddingVertical: 9,
+      borderWidth: 1,
+      borderColor: "#C4B5FD",
+      borderRadius: 20,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  languageText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#6D28D9",
-  },
+    languageText: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: "#6D28D9",
+    },
 
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 25,
-  },
+    titleRow: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      marginTop: 25,
+    },
 
-  titleInformation: {
-    flex: 1,
-    paddingRight: 12,
-  },
+    titleInformation: {
+      flex: 1,
+      paddingRight: 12,
+    },
 
-  title: {
-    fontSize: 29,
-    fontWeight: "800",
-    color: "#1F2937",
-  },
+    title: {
+      fontSize: 29,
+      fontWeight: "800",
+      color: "#1F2937",
+    },
 
-  subtitle: {
-    marginTop: 7,
-    fontSize: 13,
-    lineHeight: 20,
-    color: "#6B7280",
-  },
+    subtitle: {
+      marginTop: 7,
+      fontSize: 13,
+      lineHeight: 20,
+      color: "#6B7280",
+    },
 
-  liveBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 15,
-  },
+    liveBadge: {
+      paddingHorizontal: 9,
+      paddingVertical: 7,
+      borderRadius: 15,
+    },
 
-  liveConnected: {
-    backgroundColor: "#D1FAE5",
-  },
+    liveConnected: {
+      backgroundColor:
+        "#D1FAE5",
+    },
 
-  liveConnecting: {
-    backgroundColor: "#FEF3C7",
-  },
+    liveConnecting: {
+      backgroundColor:
+        "#FEF3C7",
+    },
 
-  liveText: {
-    fontSize: 10,
-    fontWeight: "800",
-  },
+    liveText: {
+      fontSize: 10,
+      fontWeight: "800",
+    },
 
-  liveConnectedText: {
-    color: "#047857",
-  },
+    liveConnectedText: {
+      color: "#047857",
+    },
 
-  liveConnectingText: {
-    color: "#92400E",
-  },
+    liveConnectingText: {
+      color: "#92400E",
+    },
 
-  filterContainer: {
-    paddingVertical: 20,
-  },
+    filterContainer: {
+      paddingVertical: 20,
+    },
 
-  filterButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 9,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#DDD6FE",
-    borderRadius: 19,
-    backgroundColor: "#FFFFFF",
-  },
+    filterButton: {
+      paddingHorizontal: 15,
+      paddingVertical: 9,
+      marginRight: 8,
+      borderWidth: 1,
+      borderColor: "#DDD6FE",
+      borderRadius: 19,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  selectedFilterButton: {
-    borderColor: "#6D28D9",
-    backgroundColor: "#6D28D9",
-  },
+    selectedFilterButton: {
+      borderColor: "#6D28D9",
+      backgroundColor:
+        "#6D28D9",
+    },
 
-  filterText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#6B7280",
-  },
+    filterText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#6B7280",
+    },
 
-  selectedFilterText: {
-    color: "#FFFFFF",
-  },
+    selectedFilterText: {
+      color: "#FFFFFF",
+    },
 
-  countRow: {
-    marginBottom: 12,
-  },
+    countRow: {
+      marginBottom: 12,
+    },
 
-  countText: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
+    countText: {
+      fontSize: 12,
+      color: "#6B7280",
+    },
 
-  bookingCard: {
-    padding: 18,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-  },
+    bookingCard: {
+      padding: 18,
+      marginBottom: 15,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      borderRadius: 16,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  bookingTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
+    bookingTopRow: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+    },
 
-  workerInformation: {
-    flex: 1,
-    flexDirection: "row",
-    paddingRight: 8,
-  },
+    workerInformation: {
+      flex: 1,
+      flexDirection: "row",
+      paddingRight: 8,
+    },
 
-  workerAvatar: {
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 24,
-    backgroundColor: "#EDE9FE",
-  },
+    workerAvatar: {
+      width: 48,
+      height: 48,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      borderRadius: 24,
+      backgroundColor:
+        "#EDE9FE",
+    },
 
-  workerAvatarText: {
-    fontSize: 23,
-  },
+    workerAvatarText: {
+      fontSize: 23,
+    },
 
-  workerTextContainer: {
-    flex: 1,
-    marginLeft: 11,
-  },
+    workerTextContainer: {
+      flex: 1,
+      marginLeft: 11,
+    },
 
-  workerName: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#1F2937",
-  },
+    workerName: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#1F2937",
+    },
 
-  workerCategory: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#6D28D9",
-  },
+    workerCategory: {
+      marginTop: 3,
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#6D28D9",
+    },
 
-  workerTown: {
-    marginTop: 4,
-    fontSize: 11,
-    color: "#6B7280",
-  },
+    workerTown: {
+      marginTop: 4,
+      fontSize: 11,
+      color: "#6B7280",
+    },
 
-  statusBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 14,
-  },
+    statusBadge: {
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderRadius: 14,
+    },
 
-  statusText: {
-    fontSize: 10,
-    fontWeight: "800",
-  },
+    statusText: {
+      fontSize: 10,
+      fontWeight: "800",
+    },
 
-  divider: {
-    height: 1,
-    marginVertical: 14,
-    backgroundColor: "#E5E7EB",
-  },
+    divider: {
+      height: 1,
+      marginVertical: 14,
+      backgroundColor:
+        "#E5E7EB",
+    },
 
-  detailLabel: {
-    marginTop: 10,
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#6B7280",
-  },
+    detailLabel: {
+      marginTop: 10,
+      fontSize: 11,
+      fontWeight: "700",
+      color: "#6B7280",
+    },
 
-  detailValue: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#1F2937",
-  },
+    detailValue: {
+      marginTop: 4,
+      fontSize: 14,
+      lineHeight: 20,
+      color: "#1F2937",
+    },
 
-  description: {
-    marginTop: 4,
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#374151",
-  },
+    description: {
+      marginTop: 4,
+      fontSize: 14,
+      lineHeight: 21,
+      color: "#374151",
+    },
 
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 14,
-    marginTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-  },
+    priceRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+      paddingTop: 14,
+      marginTop: 15,
+      borderTopWidth: 1,
+      borderTopColor:
+        "#E5E7EB",
+    },
 
-  priceLabel: {
-    flex: 1,
-    paddingRight: 10,
-    fontSize: 12,
-    color: "#6B7280",
-  },
+    priceLabel: {
+      flex: 1,
+      paddingRight: 10,
+      fontSize: 12,
+      color: "#6B7280",
+    },
 
-  priceValue: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#047857",
-  },
+    priceValue: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#047857",
+    },
 
-  cancelButton: {
-    minHeight: 47,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: "#DC2626",
-    borderRadius: 10,
-    backgroundColor: "#FEF2F2",
-  },
+    paymentSection: {
+      padding: 15,
+      marginTop: 17,
+      borderWidth: 1,
+      borderColor: "#DDD6FE",
+      borderRadius: 13,
+      backgroundColor:
+        "#FAF8FF",
+    },
 
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#DC2626",
-  },
+    paymentTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
 
-  reviewButton: {
-    minHeight: 49,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 16,
-    borderRadius: 10,
-    backgroundColor: "#6D28D9",
-  },
+    paymentTitleContainer: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+    },
 
-  reviewButtonText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
+    paymentIcon: {
+      marginRight: 8,
+      fontSize: 20,
+    },
 
-  reviewedBadge: {
-    alignItems: "center",
-    padding: 13,
-    marginTop: 16,
-    borderRadius: 10,
-    backgroundColor: "#D1FAE5",
-  },
+    paymentTitle: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: "#1F2937",
+    },
 
-  reviewedText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#047857",
-  },
+    paymentStatusBadge: {
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 14,
+    },
 
-  viewWorkerButton: {
-    alignItems: "center",
-    paddingVertical: 13,
-    marginTop: 5,
-  },
+    paymentStatusText: {
+      fontSize: 10,
+      fontWeight: "800",
+    },
 
-  viewWorkerText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#6D28D9",
-  },
+    paymentInformationCard: {
+      padding: 12,
+      marginTop: 12,
+      borderRadius: 9,
+      backgroundColor:
+        "#FFFFFF",
+    },
 
-  disabledButton: {
-    opacity: 0.55,
-  },
+    paymentInformationText: {
+      fontSize: 12,
+      lineHeight: 18,
+      color: "#6B7280",
+    },
 
-  errorCard: {
-    padding: 15,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#FCA5A5",
-    borderRadius: 11,
-    backgroundColor: "#FEF2F2",
-  },
+    paymentDetails: {
+      marginTop: 12,
+    },
 
-  errorText: {
-    fontSize: 13,
-    color: "#B91C1C",
-  },
+    paymentDetailRow: {
+      flexDirection: "row",
+      alignItems:
+        "flex-start",
+      justifyContent:
+        "space-between",
+      paddingVertical: 6,
+    },
 
-  retryText: {
-    marginTop: 8,
-    fontWeight: "800",
-    color: "#6D28D9",
-  },
+    paymentDetailLabel: {
+      flex: 1,
+      paddingRight: 10,
+      fontSize: 11,
+      color: "#6B7280",
+    },
 
-  emptyCard: {
-    alignItems: "center",
-    paddingVertical: 42,
-    paddingHorizontal: 22,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 15,
-    backgroundColor: "#FFFFFF",
-  },
+    paymentDetailValue: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: "800",
+      textAlign: "right",
+      color: "#374151",
+    },
 
-  emptyIcon: {
-    fontSize: 43,
-  },
+    paymentAmount: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: "800",
+      textAlign: "right",
+      color: "#047857",
+    },
 
-  emptyTitle: {
-    marginTop: 13,
-    fontSize: 18,
-    fontWeight: "800",
-    textAlign: "center",
-    color: "#1F2937",
-  },
+    notSelectedText: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: "800",
+      textAlign: "right",
+      color: "#B45309",
+    },
 
-  emptyText: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: "center",
-    color: "#6B7280",
-  },
+    transactionText: {
+      flex: 1,
+      fontSize: 11,
+      fontWeight: "700",
+      textAlign: "right",
+      color: "#4B5563",
+    },
 
-  findWorkerButton: {
-    paddingHorizontal: 22,
-    paddingVertical: 13,
-    marginTop: 19,
-    borderRadius: 10,
-    backgroundColor: "#6D28D9",
-  },
+    cashNotice: {
+      padding: 11,
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: "#FCD34D",
+      borderRadius: 9,
+      backgroundColor:
+        "#FFFBEB",
+    },
 
-  findWorkerButtonText: {
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-});
+    cashNoticeText: {
+      fontSize: 11,
+      lineHeight: 17,
+      color: "#92400E",
+    },
+
+    paidConfirmation: {
+      alignItems: "center",
+      padding: 12,
+      marginTop: 10,
+      borderRadius: 9,
+      backgroundColor:
+        "#D1FAE5",
+    },
+
+    paidConfirmationText: {
+      fontSize: 12,
+      fontWeight: "800",
+      textAlign: "center",
+      color: "#047857",
+    },
+
+    paymentButtonContainer: {
+      marginTop: 13,
+    },
+
+    cashPaymentButton: {
+      minHeight: 48,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      borderRadius: 10,
+      backgroundColor:
+        "#059669",
+    },
+
+    onlinePaymentButton: {
+      minHeight: 48,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginTop: 9,
+      borderWidth: 1,
+      borderColor: "#6D28D9",
+      borderRadius: 10,
+      backgroundColor:
+        "#FFFFFF",
+    },
+
+    paymentButtonText: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#FFFFFF",
+    },
+
+    onlinePaymentButtonText: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#6D28D9",
+    },
+
+    cancelButton: {
+      minHeight: 47,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginTop: 16,
+      borderWidth: 1,
+      borderColor: "#DC2626",
+      borderRadius: 10,
+      backgroundColor:
+        "#FEF2F2",
+    },
+
+    cancelButtonText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#DC2626",
+    },
+
+    reviewButton: {
+      minHeight: 49,
+      alignItems: "center",
+      justifyContent:
+        "center",
+      marginTop: 16,
+      borderRadius: 10,
+      backgroundColor:
+        "#6D28D9",
+    },
+
+    reviewButtonText: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#FFFFFF",
+    },
+
+    reviewedBadge: {
+      alignItems: "center",
+      padding: 13,
+      marginTop: 16,
+      borderRadius: 10,
+      backgroundColor:
+        "#D1FAE5",
+    },
+
+    reviewedText: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#047857",
+    },
+
+    viewWorkerButton: {
+      alignItems: "center",
+      paddingVertical: 13,
+      marginTop: 5,
+    },
+
+    viewWorkerText: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#6D28D9",
+    },
+
+    disabledButton: {
+      opacity: 0.55,
+    },
+
+    errorCard: {
+      padding: 15,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: "#FCA5A5",
+      borderRadius: 11,
+      backgroundColor:
+        "#FEF2F2",
+    },
+
+    errorText: {
+      fontSize: 13,
+      color: "#B91C1C",
+    },
+
+    retryText: {
+      marginTop: 8,
+      fontWeight: "800",
+      color: "#6D28D9",
+    },
+
+    emptyCard: {
+      alignItems: "center",
+      paddingVertical: 42,
+      paddingHorizontal: 22,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      borderRadius: 15,
+      backgroundColor:
+        "#FFFFFF",
+    },
+
+    emptyIcon: {
+      fontSize: 43,
+    },
+
+    emptyTitle: {
+      marginTop: 13,
+      fontSize: 18,
+      fontWeight: "800",
+      textAlign: "center",
+      color: "#1F2937",
+    },
+
+    emptyText: {
+      marginTop: 8,
+      fontSize: 13,
+      lineHeight: 20,
+      textAlign: "center",
+      color: "#6B7280",
+    },
+
+    findWorkerButton: {
+      paddingHorizontal: 22,
+      paddingVertical: 13,
+      marginTop: 19,
+      borderRadius: 10,
+      backgroundColor:
+        "#6D28D9",
+    },
+
+    findWorkerButtonText: {
+      fontWeight: "800",
+      color: "#FFFFFF",
+    },
+  });

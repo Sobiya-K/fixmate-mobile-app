@@ -60,7 +60,8 @@ type PaymentStatus =
   | "paid"
   | "failed"
   | "cancelled"
-  | "refunded";
+  | "refunded"
+  | "chargedback";
 
 type RawBooking = {
   id: string;
@@ -188,6 +189,12 @@ const getPaymentStatusTheme = (
       return {
         backgroundColor: "#EDE9FE",
         textColor: "#6D28D9",
+      };
+
+    case "chargedback":
+      return {
+        backgroundColor: "#FEE2E2",
+        textColor: "#B91C1C",
       };
 
     case "pending":
@@ -368,6 +375,12 @@ export default function MyBookingsScreen() {
             return translate(
               "payments.refunded",
               "Refunded"
+            );
+
+          case "chargedback":
+            return translate(
+              "payments.chargedback",
+              "Charged Back"
             );
 
           default:
@@ -1190,27 +1203,44 @@ export default function MyBookingsScreen() {
       );
     };
 
-  const showOnlinePaymentInformation =
-    () => {
-      Alert.alert(
-        translate(
-          "payments.onlinePaymentTitle",
-          "PayHere Online Payment"
-        ),
-        translate(
-          "payments.onlinePaymentMessage",
-          "The secure PayHere Sandbox checkout will be connected in the next development step. Cash After Service is available now."
-        ),
-        [
-          {
-            text: translate(
-              "common.ok",
-              "OK"
-            ),
-          },
-        ]
-      );
-    };
+  const openOnlinePaymentCheckout = (
+    booking: CustomerBooking
+  ) => {
+    Alert.alert(
+      translate(
+        "payments.onlinePaymentTitle",
+        "PayHere Online Payment"
+      ),
+      translate(
+        "payments.onlinePaymentConfirmation",
+        "Continue to the PayHere Sandbox checkout? This is a test payment and no real money will be charged."
+      ),
+      [
+        {
+          text: translate(
+            "common.cancel",
+            "Cancel"
+          ),
+          style: "cancel",
+        },
+        {
+          text: translate(
+            "payments.continueToPayHere",
+            "Continue"
+          ),
+          onPress: () =>
+            router.push({
+              pathname:
+                "/payhere-checkout",
+              params: {
+                bookingId:
+                  booking.id,
+              },
+            }),
+        },
+      ]
+    );
+  };
 
   const openWorker = (
     workerId: string
@@ -2163,6 +2193,54 @@ export default function MyBookingsScreen() {
                             </View>
                           )}
 
+                        {payment.payment_method ===
+                          "payhere" &&
+                          payment.payment_status ===
+                            "processing" && (
+                            <View
+                              style={
+                                styles.onlineNotice
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.onlineNoticeText
+                                }
+                              >
+                                {translate(
+                                  "payments.verifyingOnlinePayment",
+                                  "Your PayHere payment was submitted and is being securely verified. The status should update automatically."
+                                )}
+                              </Text>
+                            </View>
+                          )}
+
+                        {payment.payment_method ===
+                          "payhere" &&
+                          (
+                            payment.payment_status ===
+                              "failed" ||
+                            payment.payment_status ===
+                              "cancelled"
+                          ) && (
+                            <View
+                              style={
+                                styles.failedPaymentNotice
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.failedPaymentNoticeText
+                                }
+                              >
+                                {translate(
+                                  "payments.onlinePaymentRetry",
+                                  "The online payment was not completed. You may try PayHere again or choose Cash After Service."
+                                )}
+                              </Text>
+                            </View>
+                          )}
+
                         {payment.payment_status ===
                           "paid" && (
                           <View
@@ -2232,8 +2310,10 @@ export default function MyBookingsScreen() {
                           style={
                             styles.onlinePaymentButton
                           }
-                          onPress={
-                            showOnlinePaymentInformation
+                          onPress={() =>
+                            openOnlinePaymentCheckout(
+                              booking
+                            )
                           }
                           disabled={
                             isSelectingPayment
@@ -2777,6 +2857,38 @@ const styles =
       fontSize: 11,
       lineHeight: 17,
       color: "#92400E",
+    },
+
+    onlineNotice: {
+      padding: 11,
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: "#93C5FD",
+      borderRadius: 9,
+      backgroundColor:
+        "#EFF6FF",
+    },
+
+    onlineNoticeText: {
+      fontSize: 11,
+      lineHeight: 17,
+      color: "#1D4ED8",
+    },
+
+    failedPaymentNotice: {
+      padding: 11,
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: "#FCA5A5",
+      borderRadius: 9,
+      backgroundColor:
+        "#FEF2F2",
+    },
+
+    failedPaymentNoticeText: {
+      fontSize: 11,
+      lineHeight: 17,
+      color: "#B91C1C",
     },
 
     paidConfirmation: {

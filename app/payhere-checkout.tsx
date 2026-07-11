@@ -14,7 +14,8 @@ import {
 import {
   ActivityIndicator,
   Alert,
-  BackHandler,
+  NativeModules,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -22,13 +23,7 @@ import {
   View,
 } from "react-native";
 
-import type {
-  WebViewNavigation,
-} from "react-native-webview";
-
-import {
-  WebView,
-} from "react-native-webview";
+import PayHere from "@payhere/payhere-mobilesdk-reactnative";
 
 import {
   useLanguage,
@@ -38,147 +33,44 @@ import {
   supabase,
 } from "@/lib/supabase";
 
-type CheckoutFields = Record<
-  string,
-  string
->;
+type PayHerePaymentObject = {
+  sandbox: boolean;
+  merchant_id: string;
+  notify_url: string;
+  order_id: string;
+  items: string;
+  amount: string;
+  currency: "LKR" | "USD";
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+  delivery_address?: string;
+  delivery_city?: string;
+  delivery_country?: string;
+  custom_1?: string;
+  custom_2?: string;
+};
 
 type CreatePaymentResponse = {
-  checkout_url: string;
   payment_id: string;
   booking_id: string;
-  fields: CheckoutFields;
+  payment_object: PayHerePaymentObject;
 };
 
-const escapeHtml = (
-  value: string
-): string =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+type CheckoutState =
+  | "preparing"
+  | "opening"
+  | "waiting"
+  | "error";
 
-const buildCheckoutHtml = (
-  checkoutUrl: string,
-  fields: CheckoutFields
-): string => {
-  const hiddenInputs =
-    Object.entries(fields)
-      .map(
-        ([name, value]) =>
-          `<input type="hidden" name="${escapeHtml(
-            name
-          )}" value="${escapeHtml(
-            String(value)
-          )}" />`
-      )
-      .join("\n");
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1"
-  />
-  <title>Opening PayHere</title>
-  <style>
-    html,
-    body {
-      margin: 0;
-      min-height: 100%;
-      font-family: Arial, sans-serif;
-      background: #f7f4ff;
-      color: #1f2937;
-    }
-
-    body {
-      display: grid;
-      place-items: center;
-    }
-
-    .card {
-      width: min(84%, 360px);
-      padding: 28px 22px;
-      border: 1px solid #ddd6fe;
-      border-radius: 18px;
-      background: #ffffff;
-      text-align: center;
-      box-shadow: 0 12px 36px rgba(31, 41, 55, 0.09);
-    }
-
-    .spinner {
-      width: 38px;
-      height: 38px;
-      margin: 0 auto 18px;
-      border: 4px solid #ede9fe;
-      border-top-color: #6d28d9;
-      border-radius: 50%;
-      animation: spin 0.9s linear infinite;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 22px;
-      color: #6d28d9;
-    }
-
-    p {
-      margin: 12px 0 0;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #6b7280;
-    }
-
-    button {
-      width: 100%;
-      min-height: 48px;
-      margin-top: 20px;
-      border: 0;
-      border-radius: 10px;
-      background: #6d28d9;
-      font-size: 15px;
-      font-weight: 700;
-      color: #ffffff;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <div class="spinner"></div>
-    <h1>Opening PayHere Sandbox</h1>
-    <p>
-      Please wait while FixMate prepares the secure checkout.
-    </p>
-
-    <form
-      id="payhere-form"
-      method="post"
-      action="${escapeHtml(checkoutUrl)}"
-    >
-      ${hiddenInputs}
-      <button type="submit">
-        Continue to PayHere
-      </button>
-    </form>
-  </main>
-
-  <script>
-    window.setTimeout(function () {
-      document.getElementById("payhere-form").submit();
-    }, 350);
-  </script>
-</body>
-</html>`;
-};
+type ClientEvent =
+  | "completed"
+  | "error"
+  | "dismissed";
 
 const getSingleParam = (
   value: string | string[] | undefined
@@ -186,6 +78,37 @@ const getSingleParam = (
   Array.isArray(value)
     ? value[0] || ""
     : value || "";
+
+const formatError = (
+  value: unknown
+): string => {
+  if (
+    typeof value === "string" &&
+    value.trim() !== ""
+  ) {
+    return value.trim();
+  }
+
+  if (value instanceof Error) {
+    return value.message;
+  }
+
+  try {
+    const serialized =
+      JSON.stringify(value);
+
+    if (
+      serialized &&
+      serialized !== "{}"
+    ) {
+      return serialized;
+    }
+  } catch {
+    // Fall through to the generic message.
+  }
+
+  return "Unknown PayHere error.";
+};
 
 export default function PayHereCheckoutScreen() {
   const {
@@ -223,50 +146,278 @@ export default function PayHereCheckoutScreen() {
     [t]
   );
 
-  const webViewRef =
-    useRef<WebView>(null);
+  const screenActiveRef =
+    useRef(true);
 
-  const checkoutFinishedRef =
+  const launchStartedRef =
     useRef(false);
 
   const [
-    checkoutHtml,
-    setCheckoutHtml,
-  ] = useState("");
-
-  const [
-    isPreparing,
-    setIsPreparing,
-  ] = useState(true);
-
-  const [
-    canGoBack,
-    setCanGoBack,
-  ] = useState(false);
+    checkoutState,
+    setCheckoutState,
+  ] = useState<CheckoutState>(
+    "preparing"
+  );
 
   const [
     errorMessage,
     setErrorMessage,
   ] = useState("");
 
-  const preparePayment =
-    useCallback(async () => {
-      setIsPreparing(true);
+  const reportClientEvent =
+    useCallback(
+      async (
+        event: ClientEvent,
+        options?: {
+          gatewayPaymentId?: string;
+          message?: string;
+        }
+      ): Promise<void> => {
+        try {
+          const {
+            error,
+          } =
+            await supabase.functions.invoke(
+              "create-payhere-payment",
+              {
+                body: {
+                  action:
+                    "client_event",
+                  booking_id:
+                    bookingId,
+                  event,
+                  gateway_payment_id:
+                    options?.gatewayPaymentId ??
+                    null,
+                  message:
+                    options?.message ??
+                    null,
+                },
+              }
+            );
+
+          if (error) {
+            console.error(
+              "PayHere client-event reporting failed:",
+              error
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Unexpected PayHere client-event reporting error:",
+            error
+          );
+        }
+      },
+      [bookingId]
+    );
+
+  const returnToBookings =
+    useCallback(() => {
+      router.replace(
+        "/my-bookings"
+      );
+    }, []);
+
+  const handlePaymentCompleted =
+    useCallback(
+      async (
+        paymentId: string
+      ): Promise<void> => {
+        if (
+          screenActiveRef.current
+        ) {
+          setCheckoutState(
+            "waiting"
+          );
+        }
+
+        await reportClientEvent(
+          "completed",
+          {
+            gatewayPaymentId:
+              String(
+                paymentId || ""
+              ).trim(),
+            message:
+              "PayHere native SDK reported payment completion. Waiting for the secure server notification.",
+          }
+        );
+
+        if (
+          !screenActiveRef.current
+        ) {
+          return;
+        }
+
+        Alert.alert(
+          translate(
+            "payments.paymentSubmittedTitle",
+            "Payment submitted"
+          ),
+          translate(
+            "payments.paymentSubmittedMessage",
+            "PayHere accepted the payment. FixMate is securely verifying it, and the status will update automatically."
+          ),
+          [
+            {
+              text: translate(
+                "payments.viewBooking",
+                "View Booking"
+              ),
+              onPress:
+                returnToBookings,
+            },
+          ],
+          {
+            cancelable: false,
+          }
+        );
+      },
+      [
+        reportClientEvent,
+        returnToBookings,
+        translate,
+      ]
+    );
+
+  const handlePaymentError =
+    useCallback(
+      async (
+        errorData: unknown
+      ): Promise<void> => {
+        const message =
+          formatError(
+            errorData
+          );
+
+        console.error(
+          "PayHere native payment error:",
+          errorData
+        );
+
+        await reportClientEvent(
+          "error",
+          {
+            message,
+          }
+        );
+
+        if (
+          !screenActiveRef.current
+        ) {
+          return;
+        }
+
+        launchStartedRef.current =
+          false;
+
+        setErrorMessage(message);
+
+        setCheckoutState(
+          "error"
+        );
+      },
+      [reportClientEvent]
+    );
+
+  const handlePaymentDismissed =
+    useCallback(
+      async (): Promise<void> => {
+        await reportClientEvent(
+          "dismissed",
+          {
+            message:
+              "The customer dismissed the PayHere native checkout.",
+          }
+        );
+
+        if (
+          !screenActiveRef.current
+        ) {
+          return;
+        }
+
+        Alert.alert(
+          translate(
+            "payments.paymentCancelledTitle",
+            "Payment cancelled"
+          ),
+          translate(
+            "payments.paymentCancelledMessage",
+            "The PayHere payment was not completed. You can try again from My Bookings."
+          ),
+          [
+            {
+              text: translate(
+                "common.ok",
+                "OK"
+              ),
+              onPress:
+                returnToBookings,
+            },
+          ],
+          {
+            cancelable: false,
+          }
+        );
+      },
+      [
+        reportClientEvent,
+        returnToBookings,
+        translate,
+      ]
+    );
+
+  const prepareAndLaunchPayment =
+    useCallback(async (): Promise<void> => {
+      if (
+        launchStartedRef.current
+      ) {
+        return;
+      }
+
+      launchStartedRef.current =
+        true;
+
+      setCheckoutState(
+        "preparing"
+      );
+
       setErrorMessage("");
-      setCheckoutHtml("");
-      checkoutFinishedRef.current =
-        false;
 
       try {
         if (!bookingId) {
-          setErrorMessage(
+          throw new Error(
             translate(
               "payments.invalidBooking",
               "The booking reference is missing."
             )
           );
+        }
 
-          return;
+        if (
+          Platform.OS !==
+            "android" &&
+          Platform.OS !== "ios"
+        ) {
+          throw new Error(
+            translate(
+              "payments.mobileOnly",
+              "PayHere native checkout is available only on Android or iOS."
+            )
+          );
+        }
+
+        if (
+          !NativeModules.PayhereOfficial
+        ) {
+          throw new Error(
+            translate(
+              "payments.nativeModuleMissing",
+              "The PayHere native module is not available. Open FixMate using the installed development APK, not Expo Go."
+            )
+          );
         }
 
         const {
@@ -282,7 +433,9 @@ export default function PayHereCheckoutScreen() {
           sessionError ||
           !session
         ) {
-          router.replace("/login");
+          router.replace(
+            "/login"
+          );
           return;
         }
 
@@ -301,20 +454,7 @@ export default function PayHereCheckoutScreen() {
           );
 
         if (error) {
-          console.error(
-            "Create PayHere payment function error:",
-            error
-          );
-
-          setErrorMessage(
-            error.message ||
-              translate(
-                "payments.checkoutPrepareFailed",
-                "The online payment could not be prepared."
-              )
-          );
-
-          return;
+          throw error;
         }
 
         const response =
@@ -324,243 +464,151 @@ export default function PayHereCheckoutScreen() {
 
         if (
           !response ||
-          !response.checkout_url ||
-          !response.fields
+          !response.payment_id ||
+          !response.booking_id ||
+          !response.payment_object
         ) {
-          setErrorMessage(
+          throw new Error(
             translate(
               "payments.invalidCheckoutResponse",
-              "The payment server returned an invalid checkout response."
+              "The payment server returned an invalid native checkout response."
             )
           );
+        }
 
+        if (
+          !screenActiveRef.current
+        ) {
           return;
         }
 
-        setCheckoutHtml(
-          buildCheckoutHtml(
-            response.checkout_url,
-            response.fields
-          )
+        setCheckoutState(
+          "opening"
+        );
+
+        PayHere.startPayment(
+          response.payment_object,
+          (
+            paymentId:
+              string
+          ) => {
+            void handlePaymentCompleted(
+              paymentId
+            );
+          },
+          (
+            errorData:
+              unknown
+          ) => {
+            void handlePaymentError(
+              errorData
+            );
+          },
+          () => {
+            void handlePaymentDismissed();
+          }
         );
       } catch (error) {
+        const message =
+          formatError(error);
+
         console.error(
-          "Unexpected PayHere checkout preparation error:",
+          "PayHere native checkout preparation error:",
           error
         );
 
-        setErrorMessage(
-          translate(
-            "payments.checkoutUnexpectedError",
-            "Something went wrong while preparing the online payment."
-          )
+        await reportClientEvent(
+          "error",
+          {
+            message,
+          }
         );
-      } finally {
-        setIsPreparing(false);
+
+        if (
+          !screenActiveRef.current
+        ) {
+          return;
+        }
+
+        launchStartedRef.current =
+          false;
+
+        setErrorMessage(
+          message
+        );
+
+        setCheckoutState(
+          "error"
+        );
       }
     }, [
       bookingId,
+      handlePaymentCompleted,
+      handlePaymentDismissed,
+      handlePaymentError,
+      reportClientEvent,
       translate,
     ]);
 
   useEffect(() => {
-    void preparePayment();
-  }, [preparePayment]);
+    screenActiveRef.current =
+      true;
 
-  const returnToBookings =
-    useCallback(
-      (
-        result:
-          | "submitted"
-          | "cancelled"
-      ) => {
-        if (
-          checkoutFinishedRef.current
-        ) {
-          return;
-        }
-
-        checkoutFinishedRef.current =
-          true;
-
-        if (
-          result ===
-          "cancelled"
-        ) {
-          Alert.alert(
-            translate(
-              "payments.paymentCancelledTitle",
-              "Payment cancelled"
-            ),
-            translate(
-              "payments.paymentCancelledMessage",
-              "The PayHere checkout was cancelled. You can try again from My Bookings."
-            ),
-            [
-              {
-                text: translate(
-                  "common.ok",
-                  "OK"
-                ),
-
-                onPress: () =>
-                  router.replace(
-                    "/my-bookings"
-                  ),
-              },
-            ]
-          );
-
-          return;
-        }
-
-        Alert.alert(
-          translate(
-            "payments.paymentSubmittedTitle",
-            "Payment submitted"
-          ),
-          translate(
-            "payments.paymentSubmittedMessage",
-            "Return to My Bookings while PayHere securely verifies the result. The status may take a few seconds to update."
-          ),
-          [
-            {
-              text: translate(
-                "payments.viewBooking",
-                "View Booking"
-              ),
-
-              onPress: () =>
-                router.replace(
-                  "/my-bookings"
-                ),
-            },
-          ]
-        );
-      },
-      [translate]
-    );
-
-  const handleNavigationRequest =
-    useCallback(
-      (
-        request: WebViewNavigation
-      ): boolean => {
-        const url =
-          request.url || "";
-
-        const isReturnUrl =
-          url.includes(
-            "/functions/v1/payhere-notify"
-          ) &&
-          url.includes(
-            "result=return"
-          );
-
-        const isCancelUrl =
-          url.includes(
-            "/functions/v1/payhere-notify"
-          ) &&
-          url.includes(
-            "result=cancel"
-          );
-
-        if (isCancelUrl) {
-          setTimeout(
-            () =>
-              returnToBookings(
-                "cancelled"
-              ),
-            0
-          );
-
-          return false;
-        }
-
-        if (isReturnUrl) {
-          setTimeout(
-            () =>
-              returnToBookings(
-                "submitted"
-              ),
-            0
-          );
-
-          return false;
-        }
-
-        return true;
-      },
-      [returnToBookings]
-    );
-
-  const handleNavigationChange =
-    useCallback(
-      (
-        navigationState:
-          WebViewNavigation
-      ) => {
-        setCanGoBack(
-          navigationState.canGoBack
-        );
-      },
-      []
-    );
-
-  const handleWebViewError =
-    useCallback(
-      (
-        event: {
-          nativeEvent: unknown;
-        }
-      ) => {
-        console.error(
-          "PayHere WebView error:",
-          event.nativeEvent
-        );
-
-        setErrorMessage(
-          translate(
-            "payments.checkoutLoadFailed",
-            "The PayHere checkout page could not be loaded. Check your internet connection and try again."
-          )
-        );
-      },
-      [translate]
-    );
-
-  const handleBack =
-    useCallback((): boolean => {
-      if (
-        canGoBack &&
-        webViewRef.current
-      ) {
-        webViewRef.current.goBack();
-        return true;
-      }
-
-      router.replace(
-        "/my-bookings"
-      );
-
-      return true;
-    }, [canGoBack]);
-
-  useEffect(() => {
-    const subscription =
-      BackHandler.addEventListener(
-        "hardwareBackPress",
-        handleBack
-      );
+    void prepareAndLaunchPayment();
 
     return () => {
-      subscription.remove();
+      screenActiveRef.current =
+        false;
     };
-  }, [handleBack]);
+  }, [
+    prepareAndLaunchPayment,
+  ]);
+
+  const retryPayment =
+    useCallback(() => {
+      launchStartedRef.current =
+        false;
+
+      void prepareAndLaunchPayment();
+    }, [
+      prepareAndLaunchPayment,
+    ]);
+
+  const statusTitle =
+    checkoutState ===
+      "waiting"
+      ? translate(
+          "payments.verifyingPayment",
+          "Verifying payment..."
+        )
+      : checkoutState ===
+          "opening"
+        ? translate(
+            "payments.openingPayHere",
+            "Opening PayHere..."
+          )
+        : translate(
+            "payments.preparingCheckout",
+            "Preparing secure checkout..."
+          );
+
+  const statusMessage =
+    checkoutState ===
+      "waiting"
+      ? translate(
+          "payments.verificationWait",
+          "Please wait while FixMate confirms the secure PayHere notification."
+        )
+      : translate(
+          "payments.pleaseWait",
+          "Please wait a moment."
+        );
 
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={
+        styles.safeArea
+      }
     >
       <View
         style={styles.header}
@@ -569,10 +617,21 @@ export default function PayHereCheckoutScreen() {
           style={
             styles.backButton
           }
-          onPress={handleBack}
+          onPress={
+            returnToBookings
+          }
+          disabled={
+            checkoutState ===
+            "waiting"
+          }
         >
           <Text
-            style={styles.backText}
+            style={[
+              styles.backText,
+              checkoutState ===
+                "waiting" &&
+                styles.disabledText,
+            ]}
           >
             ←{" "}
             {translate(
@@ -627,16 +686,19 @@ export default function PayHereCheckoutScreen() {
         }
       >
         <Text
-          style={styles.noticeText}
+          style={
+            styles.noticeText
+          }
         >
           {translate(
             "payments.testPaymentNotice",
-            "This is a test payment. No real money will be charged."
+            "This is a sandbox test payment. No real money will be charged."
           )}
         </Text>
       </View>
 
-      {isPreparing && (
+      {checkoutState !==
+        "error" ? (
         <View
           style={
             styles.centerContainer
@@ -652,10 +714,7 @@ export default function PayHereCheckoutScreen() {
               styles.loadingTitle
             }
           >
-            {translate(
-              "payments.preparingCheckout",
-              "Preparing secure checkout..."
-            )}
+            {statusTitle}
           </Text>
 
           <Text
@@ -663,156 +722,100 @@ export default function PayHereCheckoutScreen() {
               styles.loadingText
             }
           >
-            {translate(
-              "payments.pleaseWait",
-              "Please wait a moment."
-            )}
+            {statusMessage}
           </Text>
-        </View>
-      )}
 
-      {!isPreparing &&
-        errorMessage !== "" && (
           <View
             style={
-              styles.centerContainer
+              styles.nativeBadge
             }
           >
             <Text
               style={
-                styles.errorIcon
-              }
-            >
-              ⚠️
-            </Text>
-
-            <Text
-              style={
-                styles.errorTitle
+                styles.nativeBadgeText
               }
             >
               {translate(
-                "payments.checkoutErrorTitle",
-                "Checkout unavailable"
+                "payments.nativeCheckout",
+                "Native mobile checkout"
               )}
             </Text>
+          </View>
+        </View>
+      ) : (
+        <View
+          style={
+            styles.centerContainer
+          }
+        >
+          <Text
+            style={
+              styles.errorIcon
+            }
+          >
+            ⚠️
+          </Text>
 
+          <Text
+            style={
+              styles.errorTitle
+            }
+          >
+            {translate(
+              "payments.checkoutErrorTitle",
+              "Checkout unavailable"
+            )}
+          </Text>
+
+          <Text
+            style={
+              styles.errorText
+            }
+          >
+            {errorMessage}
+          </Text>
+
+          <Pressable
+            style={
+              styles.retryButton
+            }
+            onPress={
+              retryPayment
+            }
+          >
             <Text
               style={
-                styles.errorText
+                styles.retryButtonText
               }
             >
-              {errorMessage}
+              {translate(
+                "common.retry",
+                "Try Again"
+              )}
             </Text>
+          </Pressable>
 
-            <Pressable
+          <Pressable
+            style={
+              styles.returnButton
+            }
+            onPress={
+              returnToBookings
+            }
+          >
+            <Text
               style={
-                styles.retryButton
-              }
-              onPress={() =>
-                void preparePayment()
+                styles.returnButtonText
               }
             >
-              <Text
-                style={
-                  styles.retryButtonText
-                }
-              >
-                {translate(
-                  "common.retry",
-                  "Try Again"
-                )}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={
-                styles.returnButton
-              }
-              onPress={() =>
-                router.replace(
-                  "/my-bookings"
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.returnButtonText
-                }
-              >
-                {translate(
-                  "payments.returnToBookings",
-                  "Return to My Bookings"
-                )}
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
-      {!isPreparing &&
-        errorMessage === "" &&
-        checkoutHtml !== "" && (
-          <WebView
-            ref={webViewRef}
-            style={styles.webView}
-            source={{
-              html: checkoutHtml,
-              baseUrl:
-                "https://sandbox.payhere.lk",
-            }}
-            originWhitelist={[
-              "*",
-            ]}
-            javaScriptEnabled
-            domStorageEnabled
-            sharedCookiesEnabled
-            thirdPartyCookiesEnabled
-            setSupportMultipleWindows={
-              false
-            }
-            startInLoadingState
-            renderLoading={() => (
-              <View
-                style={
-                  styles.webViewLoading
-                }
-              >
-                <ActivityIndicator
-                  size="large"
-                  color="#6D28D9"
-                />
-
-                <Text
-                  style={
-                    styles.webViewLoadingText
-                  }
-                >
-                  {translate(
-                    "payments.openingPayHere",
-                    "Opening PayHere..."
-                  )}
-                </Text>
-              </View>
-            )}
-            onShouldStartLoadWithRequest={
-              handleNavigationRequest
-            }
-            onNavigationStateChange={
-              handleNavigationChange
-            }
-            onError={
-              handleWebViewError
-            }
-            onHttpError={(
-              event
-            ) => {
-              console.error(
-                "PayHere WebView HTTP error:",
-                event.nativeEvent
-              );
-            }}
-          />
-        )}
+              {translate(
+                "payments.returnToBookings",
+                "Return to My Bookings"
+              )}
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -846,6 +849,10 @@ const styles =
       fontSize: 14,
       fontWeight: "800",
       color: "#6D28D9",
+    },
+
+    disabledText: {
+      color: "#9CA3AF",
     },
 
     headerInformation: {
@@ -908,48 +915,61 @@ const styles =
 
     loadingTitle: {
       marginTop: 16,
-      fontSize: 17,
+      fontSize: 18,
       fontWeight: "800",
       textAlign: "center",
       color: "#1F2937",
     },
 
     loadingText: {
-      marginTop: 7,
+      marginTop: 8,
       fontSize: 13,
+      lineHeight: 20,
       textAlign: "center",
       color: "#6B7280",
     },
 
+    nativeBadge: {
+      marginTop: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 18,
+      backgroundColor:
+        "#EDE9FE",
+    },
+
+    nativeBadgeText: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: "#6D28D9",
+    },
+
     errorIcon: {
-      fontSize: 46,
+      fontSize: 48,
     },
 
     errorTitle: {
       marginTop: 14,
-      fontSize: 20,
+      fontSize: 19,
       fontWeight: "800",
       textAlign: "center",
       color: "#1F2937",
     },
 
     errorText: {
-      marginTop: 9,
+      marginTop: 10,
       fontSize: 13,
       lineHeight: 20,
       textAlign: "center",
-      color: "#B91C1C",
+      color: "#6B7280",
     },
 
     retryButton: {
-      minWidth: 210,
-      minHeight: 48,
+      width: "100%",
+      marginTop: 24,
+      paddingVertical: 14,
       alignItems: "center",
-      justifyContent:
-        "center",
-      marginTop: 22,
-      paddingHorizontal: 22,
-      borderRadius: 10,
+      borderRadius: 12,
       backgroundColor:
         "#6D28D9",
     },
@@ -961,45 +981,20 @@ const styles =
     },
 
     returnButton: {
-      minWidth: 210,
-      minHeight: 46,
+      width: "100%",
+      marginTop: 12,
+      paddingVertical: 13,
       alignItems: "center",
-      justifyContent:
-        "center",
-      marginTop: 10,
-      paddingHorizontal: 22,
       borderWidth: 1,
       borderColor: "#C4B5FD",
-      borderRadius: 10,
+      borderRadius: 12,
       backgroundColor:
         "#FFFFFF",
     },
 
     returnButtonText: {
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "800",
       color: "#6D28D9",
-    },
-
-    webView: {
-      flex: 1,
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    webViewLoading: {
-      ...StyleSheet.absoluteFillObject,
-      alignItems: "center",
-      justifyContent:
-        "center",
-      backgroundColor:
-        "#FFFFFF",
-    },
-
-    webViewLoadingText: {
-      marginTop: 13,
-      fontSize: 13,
-      fontWeight: "700",
-      color: "#6B7280",
     },
   });
